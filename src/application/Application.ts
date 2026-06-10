@@ -86,4 +86,8 @@ export class Application implements EinkApplication {
     await this.store.setNewSession(newSession.id);
     return newSession.id;
   }
+
+  getAdminSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
+    return this.store.getSessionsWithDetails();
+  }
 }

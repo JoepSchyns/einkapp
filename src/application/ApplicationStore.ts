@@ -35,4 +35,17 @@ export class ApplicationStore extends Store {
   deleteSession(sessionId: string) {
     Store.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId);
   }
+
+  getSessionsWithDetails(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
+    const rows = Store.db
+      .prepare(
+        `SELECT id, last_accessed_unix, last_accessed_generator_name FROM sessions ORDER BY last_accessed_unix DESC`,
+      )
+      .all() as { id: string; last_accessed_unix: number; last_accessed_generator_name: string | null }[];
+    return rows.map((row) => ({
+      id: row.id,
+      lastAccessedAt: new Date(row.last_accessed_unix * 1000).toISOString(),
+      generatorName: row.last_accessed_generator_name,
+    }));
+  }
 }

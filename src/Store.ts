@@ -21,6 +21,11 @@ export abstract class Store {
                 PRIMARY KEY (session_id, generator_name),
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL
+            );
         `);
   }
 }

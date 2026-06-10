@@ -6,6 +6,7 @@ import { streamSSE } from 'hono/streaming';
 import sharp from 'sharp';
 import type { FitEnum } from 'sharp';
 import { Readable } from 'node:stream';
+import { createAdminRouter } from './admin/admin.js';
 
 const application = new Application();
 
@@ -62,6 +63,8 @@ app.get('/session/:id/info-sse', (c) => {
   });
 });
 
+
+app.route('/admin', createAdminRouter(application));
 
 app.use('/*', serveStatic({ root: './public' }));
 

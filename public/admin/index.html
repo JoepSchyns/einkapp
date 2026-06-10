@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eink Admin</title>
+  <style>
+    body { font-family: sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: 1.5rem; }
+    h2 { margin-top: 0; }
+    form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 280px; }
+    input { padding: 0.4rem 0.6rem; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 0.4rem 0.8rem; font-size: 1rem; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f5f5f5; }
+    button:hover { background: #e8e8e8; }
+    #logoutBtn { float: right; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
+    td code { font-size: 0.85rem; }
+    .error { color: #c00; margin-top: 0.5rem; font-size: 0.9rem; }
+    .empty { color: #999; }
+    #loginSection, #adminSection { display: none; }
+    .actions { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Eink Admin</h1>
+
+  <div id="loginSection">
+    <h2>Login</h2>
+    <form id="loginForm">
+      <input type="text" id="username" placeholder="Username" required autocomplete="username">
+      <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
+      <button type="submit">Login</button>
+    </form>
+    <p class="error" id="loginError"></p>
+  </div>
+
+  <div id="adminSection">
+    <button id="logoutBtn">Logout</button>
+    <h2>Sessions</h2>
+    <div class="actions">
+      <button id="refreshBtn">Refresh</button>
+      <span id="sessionCount"></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Session ID</th>
+          <th>Last Accessed</th>
+          <th>Generator</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody id="sessionTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const loginSection = document.getElementById('loginSection');
+    const adminSection = document.getElementById('adminSection');
+    const loginError = document.getElementById('loginError');
+
+    async function init() {
+      const res = await fetch('/admin/sessions');
+      if (res.ok) {
+        showAdmin(await res.json());
+      } else {
+        loginSection.style.display = 'block';
+      }
+    }
+
+    function showAdmin(sessions) {
+      loginSection.style.display = 'none';
+      adminSection.style.display = 'block';
+      renderSessions(sessions);
+    }
+
+    function renderSessions(sessions) {
+      const tbody = document.getElementById('sessionTable');
+      document.getElementById('sessionCount').textContent = `${sessions.length} session(s)`;
+      if (sessions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">No active sessions.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = sessions.map((s) => `
+        <tr>
+          <td><code>${escapeHtml(s.id)}</code></td>
+          <td>${escapeHtml(new Date(s.lastAccessedAt).toLocaleString())}</td>
+          <td>${s.generatorName ? escapeHtml(s.generatorName) : '<span class="empty">—</span>'}</td>
+          <td>
+            <a href="/info/?id=${encodeURIComponent(s.id)}" target="_blank" rel="noopener">Info</a>
+            &nbsp;|&nbsp;
+            <a href="/session/${encodeURIComponent(s.id)}/image" target="_blank" rel="noopener">Image</a>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginError.textContent = '';
+      const res = await fetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+      if (res.ok) {
+        const sessRes = await fetch('/admin/api/sessions');
+        showAdmin(await sessRes.json());
+      } else {
+        loginError.textContent = 'Invalid username or password.';
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/admin/logout', { method: 'POST' });
+      adminSection.style.display = 'none';
+      loginSection.style.display = 'block';
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+      const res = await fetch('/admin/api/sessions');
+      if (res.ok) {
+        renderSessions(await res.json());
+      } else {
+        adminSection.style.display = 'none';
+        loginSection.style.display = 'block';
+      }
+    });
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    init();
+  </script>
+</body>
+</html>
