@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { Application } from './application/Application.js';
 import { streamSSE } from 'hono/streaming';
 import sharp from 'sharp';
+import type { FitEnum } from 'sharp';
 import { Readable } from 'node:stream';
 
 const application = new Application();
@@ -30,11 +31,17 @@ app.get('/session/:id/image/resize', async (c) => {
   const id = c.req.param('id');
   const w = parseInt(c.req.query('w') ?? '', 10);
   const h = parseInt(c.req.query('h') ?? '', 10);
+  const fitParam = c.req.query('fit') ?? 'cover';
+  const validFits: (keyof FitEnum)[] = ['cover', 'contain', 'fill', 'inside', 'outside'];
+  if (!validFits.includes(fitParam as keyof FitEnum)) {
+    return c.text(`Query parameter fit must be one of: ${validFits.join(', ')}.`, 400);
+  }
+  const fit = fitParam as keyof FitEnum;
   if (!w || !h || w <= 0 || h <= 0) {
     return c.text('Query parameters w and h must be positive integers.', 400);
   }
   const { stream, contentType } = await application.getContent(id);
-  const pipeline = Readable.fromWeb(stream).pipe(sharp().resize(w, h, { fit: 'fill' }));
+  const pipeline = Readable.fromWeb(stream).pipe(sharp().resize(w, h, { fit }));
   return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
 });
 
