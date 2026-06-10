@@ -39,7 +39,7 @@ export abstract class RedditGenerator extends ImageGenerator<RedditData> {
       body: 'grant_type=client_credentials',
     });
 
-    const { access_token } = await tokenResponse.json();
+    const { access_token } = await tokenResponse.json() as { access_token: string };
 
     return fetch(`https://oauth.reddit.com/r/${this.subreddit}.json?after=${after ?? ''}`, {
       headers: { Authorization: `Bearer ${access_token}` },
