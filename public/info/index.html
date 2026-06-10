@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eink Info</title>
+  <style>
+    body { font-family: sans-serif; }
+    .empty { color: #999; }
+  </style>
+</head>
+<body>
+  <div id="info"><span class="empty">Waiting for data...</span></div>
+
+  <script>
+    const id = new URLSearchParams(location.search).get('id');
+    if (!id) {
+      document.getElementById('info').innerHTML = '<span class="empty">No session id provided. Add <code>?id=&lt;session-id&gt;</code> to the URL.</span>';
+    } else {
+      const es = new EventSource(`/session/${id}/info-sse`);
+      es.onmessage = (e) => {
+        const info = JSON.parse(e.data);
+        const el = document.getElementById('info');
+        if (!info) {
+          el.innerHTML = '<span class="empty">No info available.</span>';
+          return;
+        }
+        el.innerHTML = `
+          <h2>${escapeHtml(info.title)}</h2>
+          <p>${escapeHtml(info.description)}</p>
+          <a href="${escapeHtml(info.sourceUrl)}" target="_blank" rel="noopener">${escapeHtml(info.sourceUrl)}</a>
+        `;
+      };
+      es.onerror = () => {
+        document.getElementById('info').innerHTML = '<span class="empty">Connection lost.</span>';
+      };
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+  </script>
+</body>
+</html>
