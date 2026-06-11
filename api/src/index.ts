@@ -48,6 +48,15 @@ api.get('/session/:id/info', async (c) => {
   return c.json(info);
 });
 
+api.get('/session/:id/source', async (c) => {
+  const id = c.req.param('id');
+  const info = await application.getInfo(id);
+  if (!info?.sourceUrl) {
+    return c.text('No source URL available.', 404);
+  }
+  return c.redirect(info.sourceUrl, 302);
+});
+
 api.get('/session/:id/info-sse', (c) => {
   const id = c.req.param('id');
   return streamSSE(c, async (stream) => {

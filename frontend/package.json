@@ -8,6 +8,10 @@
   },
   "dependencies": {
     "@picocss/pico": "^2.1.1",
-    "astro": "^6.4.6"
+    "astro": "^6.4.6",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }

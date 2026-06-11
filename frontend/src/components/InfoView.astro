@@ -1,51 +1,153 @@
 ---
 ---
 
-<div id="info"><span style="color:var(--pico-muted-color)">Waiting for data...</span></div>
+<div id="info">
+  <div id="text-col">
+    <div id="title" class="hidden"></div>
+    <div id="description" class="hidden"></div>
+    <div id="status">Waiting for data...</div>
+  </div>
+  <div id="qr-col">
+    <canvas id="qr"></canvas>
+  </div>
+</div>
+
+<style>
+  #info {
+    display: flex;
+    flex-direction: row;
+    width: 250px;
+    height: 122px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  #text-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    overflow: hidden;
+    min-width: 0;
+    padding: 4px 4px 4px 5px;
+    border-right: 1px solid #ccc;
+  }
+
+  #title {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #000;
+    letter-spacing: -0.2px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  #description {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #444;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+  }
+
+  #title.hidden, #description.hidden {
+    display: none;
+  }
+
+  #status {
+    font-size: 8.5px;
+    color: #888;
+    font-style: italic;
+  }
+
+  #status.hidden {
+    display: none;
+  }
+
+  #qr-col {
+    flex-shrink: 0;
+    width: 84px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+  }
+
+  #qr {
+    display: block;
+    width: 80px;
+    height: 80px;
+  }
+
+  #qr.hidden {
+    display: none;
+  }
+</style>
 
 <script>
+  import QRCode from 'qrcode';
+
   interface ContentInfo {
     title: string;
     description: string;
     sourceUrl: string;
   }
 
-  const el = document.getElementById('info')!;
+  const titleEl = document.getElementById('title')!;
+  const descEl = document.getElementById('description')!;
+  const statusEl = document.getElementById('status')!;
+  const qrCanvas = document.getElementById('qr') as HTMLCanvasElement;
   const id = new URLSearchParams(location.search).get('id');
 
+  qrCanvas.classList.add('hidden');
+
+  function showStatus(msg: string) {
+    titleEl.classList.add('hidden');
+    descEl.classList.add('hidden');
+    statusEl.textContent = msg;
+    statusEl.classList.remove('hidden');
+    qrCanvas.classList.add('hidden');
+  }
+
   if (!id) {
-    const span = document.createElement('span');
-    span.textContent = 'No session id provided. Add ?id=<session-id> to the URL.';
-    el.replaceChildren(span);
+    showStatus('No session id provided.');
   } else {
     const es = new EventSource(`/api/session/${id}/info-sse`);
 
-    es.onmessage = (e) => {
+    es.onmessage = async (e) => {
       const info: ContentInfo | null = JSON.parse(e.data);
       if (!info) {
-        const span = document.createElement('span');
-        span.style.color = 'var(--pico-muted-color)';
-        span.textContent = 'No info available.';
-        el.replaceChildren(span);
+        showStatus('No info available.');
         return;
       }
-      const h2 = document.createElement('h2');
-      h2.textContent = info.title;
-      const p = document.createElement('p');
-      p.textContent = info.description;
-      const a = document.createElement('a');
-      a.href = info.sourceUrl;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = info.sourceUrl;
-      el.replaceChildren(h2, p, a);
+
+      statusEl.classList.add('hidden');
+      titleEl.textContent = info.title;
+      titleEl.classList.remove('hidden');
+      descEl.textContent = info.description;
+      descEl.classList.remove('hidden');
+
+      if (info.sourceUrl) {
+        const shortUrl = `${location.origin}/api/session/${id}/source`;
+        await QRCode.toCanvas(qrCanvas, shortUrl, {
+          width: 80,
+          margin: 1,
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+        qrCanvas.classList.remove('hidden');
+      } else {
+        qrCanvas.classList.add('hidden');
+      }
     };
 
     es.onerror = () => {
-      const span = document.createElement('span');
-      span.style.color = 'var(--pico-muted-color)';
-      span.textContent = 'Connection lost.';
-      el.replaceChildren(span);
+      showStatus('Connection lost.');
     };
   }
 </script>
