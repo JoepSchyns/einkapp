@@ -29,6 +29,7 @@ api.get('/session/:id/image/resize', async (c) => {
   const w = parseInt(c.req.query('w') ?? '', 10);
   const h = parseInt(c.req.query('h') ?? '', 10);
   const fitParam = c.req.query('fit') ?? 'cover';
+  const brightness = parseInt(c.req.query('brightness') ?? 1, 10);
   const validFits: (keyof FitEnum)[] = ['cover', 'contain', 'fill', 'inside', 'outside'];
   if (!validFits.includes(fitParam as keyof FitEnum)) {
     return c.text(`Query parameter fit must be one of: ${validFits.join(', ')}.`, 400);
@@ -38,7 +39,13 @@ api.get('/session/:id/image/resize', async (c) => {
     return c.text('Query parameters w and h must be positive integers.', 400);
   }
   const { stream, contentType } = await application.getContent(id);
-  const pipeline = Readable.fromWeb(stream).pipe(sharp().resize(w, h, { fit }));
+  const pipeline = Readable.fromWeb(stream).pipe(
+    sharp()
+    .resize(w, h, { fit })
+    .modulate({
+      brightness
+    })
+  );
   return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
 });
 
