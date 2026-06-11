@@ -87,6 +87,14 @@ export class Application implements EinkApplication {
     return newSession.id;
   }
 
+  deleteSession(sessionId: string): void {
+    if (!this.sessions.has(sessionId)) {
+      throw new Error('Session not found');
+    }
+    this.store.deleteSession(sessionId);
+    this.sessions.delete(sessionId);
+  }
+
   getAdminSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
     return this.store.getSessionsWithDetails();
   }

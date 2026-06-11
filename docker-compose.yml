@@ -1,12 +1,21 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
+  api:
+    build: ./api
+    expose:
+      - "3000"
+    environment:
+      - REDDIT_CLIENT_ID
+      - REDDIT_CLIENT_SECRET
+      - UNSPLASH_ACCESS_KEY
+      - ADMIN_USERNAME
+      - ADMIN_PASSWORD
+      - JWT_SECRET
     volumes:
-      - ./data:/app/data
+      - ./data/api:/app/data
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api

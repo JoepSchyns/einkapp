@@ -1,5 +1,4 @@
 import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { Application } from './application/Application.js';
 import { streamSSE } from 'hono/streaming';
@@ -17,18 +16,15 @@ app.onError((error, c) => {
   return c.text(error.message, 500);
 });
 
-app.get('/session', async (c) => {
-  const id = await application.createNewSession();
-  return c.json({ id });
-});
+const api = new Hono();
 
-app.get('/session/:id/image', async (c) => {
+api.get('/session/:id/image', async (c) => {
   const id = c.req.param('id');
   const { stream, contentType } = await application.getContent(id);
   return c.body(stream, 200, { 'Content-Type': contentType });
 });
 
-app.get('/session/:id/image/resize', async (c) => {
+api.get('/session/:id/image/resize', async (c) => {
   const id = c.req.param('id');
   const w = parseInt(c.req.query('w') ?? '', 10);
   const h = parseInt(c.req.query('h') ?? '', 10);
@@ -46,13 +42,13 @@ app.get('/session/:id/image/resize', async (c) => {
   return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
 });
 
-app.get('/session/:id/info', async (c) => {
+api.get('/session/:id/info', async (c) => {
   const id = c.req.param('id');
   const info = await application.getInfo(id);
   return c.json(info);
 });
 
-app.get('/session/:id/info-sse', (c) => {
+api.get('/session/:id/info-sse', (c) => {
   const id = c.req.param('id');
   return streamSSE(c, async (stream) => {
     const unsubscribe = await application.subscribeToInfoUpdates(id, (info) => {
@@ -63,10 +59,9 @@ app.get('/session/:id/info-sse', (c) => {
   });
 });
 
+api.route('/admin', createAdminRouter(application));
 
-app.route('/admin', createAdminRouter(application));
-
-app.use('/*', serveStatic({ root: './public' }));
+app.route('/api', api);
 
 serve(
   {

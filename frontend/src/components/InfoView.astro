@@ -1,0 +1,51 @@
+---
+---
+
+<div id="info"><span style="color:var(--pico-muted-color)">Waiting for data...</span></div>
+
+<script>
+  interface ContentInfo {
+    title: string;
+    description: string;
+    sourceUrl: string;
+  }
+
+  const el = document.getElementById('info')!;
+  const id = new URLSearchParams(location.search).get('id');
+
+  if (!id) {
+    const span = document.createElement('span');
+    span.textContent = 'No session id provided. Add ?id=<session-id> to the URL.';
+    el.replaceChildren(span);
+  } else {
+    const es = new EventSource(`/api/session/${id}/info-sse`);
+
+    es.onmessage = (e) => {
+      const info: ContentInfo | null = JSON.parse(e.data);
+      if (!info) {
+        const span = document.createElement('span');
+        span.style.color = 'var(--pico-muted-color)';
+        span.textContent = 'No info available.';
+        el.replaceChildren(span);
+        return;
+      }
+      const h2 = document.createElement('h2');
+      h2.textContent = info.title;
+      const p = document.createElement('p');
+      p.textContent = info.description;
+      const a = document.createElement('a');
+      a.href = info.sourceUrl;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = info.sourceUrl;
+      el.replaceChildren(h2, p, a);
+    };
+
+    es.onerror = () => {
+      const span = document.createElement('span');
+      span.style.color = 'var(--pico-muted-color)';
+      span.textContent = 'Connection lost.';
+      el.replaceChildren(span);
+    };
+  }
+</script>

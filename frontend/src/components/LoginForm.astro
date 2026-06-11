@@ -1,0 +1,73 @@
+---
+---
+
+<section id="loginSection">
+  <article>
+    <hgroup>
+      <h2>Login</h2>
+      <p>Sign in to continue</p>
+    </hgroup>
+    <form id="loginForm">
+      <label for="username">
+        Username
+        <input type="text" id="username" placeholder="Enter your username" required autocomplete="username" />
+      </label>
+      <label for="password">
+        Password
+        <input
+          type="password"
+          id="password"
+          placeholder="Enter your password"
+          required
+          autocomplete="current-password"
+        />
+      </label>
+      <button type="submit">Login</button>
+    </form>
+    <p id="loginError" role="alert"></p>
+  </article>
+</section>
+
+<script>
+  const form = document.getElementById('loginForm') as HTMLFormElement;
+  const loginError = document.getElementById('loginError')!;
+  const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginError.textContent = '';
+    submitBtn.setAttribute('aria-busy', 'true');
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: (document.getElementById('username') as HTMLInputElement).value,
+          password: (document.getElementById('password') as HTMLInputElement).value,
+        }),
+      });
+      if (res.ok) {
+        document.dispatchEvent(new CustomEvent('admin:login'));
+      } else {
+        loginError.textContent = 'Invalid username or password.';
+      }
+    } finally {
+      submitBtn.removeAttribute('aria-busy');
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  #loginSection > article {
+    width: 100%;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  #loginError {
+    color: var(--pico-del-color);
+  }
+</style>

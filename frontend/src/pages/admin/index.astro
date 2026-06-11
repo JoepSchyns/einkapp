@@ -1,0 +1,55 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import LoginForm from '../../components/LoginForm.astro';
+import SessionTable from '../../components/SessionTable.astro';
+---
+
+<Layout title="Eink Admin">
+  <header class="page-header">
+    <h1>Eink Admin</h1>
+  </header>
+  <LoginForm />
+  <SessionTable />
+</Layout>
+
+<script>
+  const loginSection = document.getElementById('loginSection')!;
+  const adminSection = document.getElementById('adminSection')!;
+
+  function showAdmin() {
+    loginSection.style.display = 'none';
+    adminSection.style.display = 'block';
+    document.dispatchEvent(new CustomEvent('admin:start-refresh'));
+  }
+
+  function showLogin() {
+    adminSection.style.display = 'none';
+    loginSection.style.display = 'block';
+    document.dispatchEvent(new CustomEvent('admin:stop-refresh'));
+    (document.getElementById('username') as HTMLInputElement).value = '';
+    (document.getElementById('password') as HTMLInputElement).value = '';
+  }
+
+  document.addEventListener('admin:login', () => showAdmin());
+  document.addEventListener('admin:logout', () => showLogin());
+  document.addEventListener('admin:unauthenticated', () => showLogin());
+
+  // Hide both sections until auth state is known
+  loginSection.style.display = 'none';
+  adminSection.style.display = 'none';
+  fetch('/api/admin/sessions').then((res) => {
+    if (res.ok) showAdmin(); else loginSection.style.display = 'block';
+  });
+</script>
+
+<style>
+  .page-header {
+    text-align: center;
+    padding-top: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .page-header h1 {
+    margin-bottom: 0;
+  }
+</style>
