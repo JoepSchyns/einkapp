@@ -1,46 +1,26 @@
 ---
+import SessionNav from './SessionNav.astro';
+import SessionRow from './SessionRow.astro';
 ---
 
-<template id="sessionRowTemplate">
-  <tr>
-    <td><code data-field="id"></code></td>
-    <td data-field="date"></td>
-    <td data-field="generator"></td>
-    <td>
-      <a data-field="infoLink" target="_blank" rel="noopener">Info</a>
-      {' | '}
-      <a data-field="imageLink" target="_blank" rel="noopener">Image</a>
-    </td>
-    <td>
-      <a data-field="deleteBtn" href="#" role="button" class="delete-btn">Delete</a>
-    </td>
-  </tr>
-</template>
+<SessionRow />
 
 <section id="adminSection">
-  <nav>
-    <ul>
-      <li><strong>Sessions</strong> &nbsp;<span id="sessionCount"></span></li>
-      <li><small id="refreshCountdown"></small></li>
-    </ul>
-    <ul>
-      <li><button id="refreshBtn" class="outline">Refresh</button></li>
-      <li><button id="createSessionBtn">Create Session</button></li>
-      <li><button id="logoutBtn" class="outline secondary">Logout</button></li>
-    </ul>
-  </nav>
-  <table>
-    <thead>
-      <tr>
-        <th>Session ID</th>
-        <th>Last Accessed</th>
-        <th>Generator</th>
-        <th>Links</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="sessionTable"></tbody>
-  </table>
+  <SessionNav />
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Session ID</th>
+          <th>Last Accessed</th>
+          <th>Generator</th>
+          <th>Links</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="sessionTable"></tbody>
+    </table>
+  </div>
 </section>
 
 <script>
@@ -56,8 +36,6 @@
   let secondsLeft = REFRESH_INTERVAL_S;
   let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
-
-  // --- Rendering ---
 
   function renderSessions(sessions: Session[]) {
     const tbody = document.getElementById('sessionTable')!;
@@ -89,18 +67,15 @@
       (field('infoLink') as HTMLAnchorElement).href = `/info/?id=${encodeURIComponent(s.id)}`;
       (field('imageLink') as HTMLAnchorElement).href = `/api/session/${encodeURIComponent(s.id)}/image`;
       (field('deleteBtn') as HTMLAnchorElement).dataset.deleteId = s.id;
+      (field('copyBtn') as HTMLButtonElement).dataset.copyId = s.id;
       tbody.appendChild(row);
     }
   }
-
-  // --- API ---
 
   async function fetchSessions(): Promise<Session[] | null> {
     const res = await fetch('/api/admin/sessions');
     return res.ok ? res.json() : null;
   }
-
-  // --- Auto-refresh ---
 
   function startAutoRefresh() {
     clearInterval(autoRefreshTimer!);
@@ -129,8 +104,6 @@
     countdownEl.textContent = '';
   }
 
-  // --- Helpers ---
-
   async function withBusy(btn: HTMLButtonElement, fn: () => Promise<void>) {
     btn.setAttribute('aria-busy', 'true');
     btn.disabled = true;
@@ -139,8 +112,6 @@
       btn.disabled = false;
     }
   }
-
-  // --- Button handlers ---
 
   document.getElementById('refreshBtn')!.addEventListener('click', (e) =>
     withBusy(e.currentTarget as HTMLButtonElement, async () => {
@@ -167,6 +138,14 @@
   });
 
   document.getElementById('sessionTable')!.addEventListener('click', async (e) => {
+    const copyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy-id]');
+    if (copyBtn) {
+      e.preventDefault();
+      await navigator.clipboard.writeText(copyBtn.dataset.copyId!);
+      copyBtn.classList.add('copied');
+      setTimeout(() => copyBtn.classList.remove('copied'), 1500);
+      return;
+    }
     const btn = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-delete-id]');
     if (!btn) return;
     e.preventDefault();
@@ -175,8 +154,6 @@
     const sessions = await fetchSessions();
     if (sessions) renderSessions(sessions);
   });
-
-  // --- External events ---
 
   document.addEventListener('admin:start-refresh', async () => {
     const sessions = await fetchSessions();
@@ -187,20 +164,8 @@
 </script>
 
 <style>
-  #refreshCountdown {
-    color: var(--pico-muted-color);
-    font-size: 0.8rem;
-  }
-
-  .delete-btn {
-    font-size: 0.8rem;
-    padding: 0.1rem 0.6rem;
-    background-color: var(--pico-del-color);
-    border-color: var(--pico-del-color);
-    color: #fff;
-  }
-
-  .delete-btn:hover {
-    filter: brightness(0.85);
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 </style>
