@@ -13,8 +13,6 @@ import SessionRow from './SessionRow.astro';
         <tr>
           <th>Session ID</th>
           <th>Last Accessed</th>
-          <th>Generator</th>
-          <th>Links</th>
           <th></th>
         </tr>
       </thead>
@@ -44,7 +42,7 @@ import SessionRow from './SessionRow.astro';
 
     if (sessions.length === 0) {
       const td = document.createElement('td');
-      td.colSpan = 5;
+      td.colSpan = 3;
       td.style.color = 'var(--pico-muted-color)';
       td.textContent = 'No active sessions.';
       const tr = document.createElement('tr');
@@ -58,16 +56,9 @@ import SessionRow from './SessionRow.astro';
       const field = (name: string) => row.querySelector(`[data-field="${name}"]`)!;
       field('id').textContent = s.id;
       field('date').textContent = new Date(s.lastAccessedAt).toLocaleString();
-      if (s.generatorName) {
-        field('generator').textContent = s.generatorName;
-      } else {
-        (field('generator') as HTMLElement).style.color = 'var(--pico-muted-color)';
-        field('generator').textContent = '—';
-      }
-      (field('infoLink') as HTMLAnchorElement).href = `/info/?id=${encodeURIComponent(s.id)}`;
-      (field('imageLink') as HTMLAnchorElement).href = `/api/session/${encodeURIComponent(s.id)}/image`;
-      (field('deleteBtn') as HTMLAnchorElement).dataset.deleteId = s.id;
+      (field('viewLink') as HTMLAnchorElement).href = `/admin/session?id=${encodeURIComponent(s.id)}`;
       (field('copyBtn') as HTMLButtonElement).dataset.copyId = s.id;
+      (row.querySelector('tr') as HTMLTableRowElement).dataset.href = `/admin/session?id=${encodeURIComponent(s.id)}`;
       tbody.appendChild(row);
     }
   }
@@ -146,13 +137,10 @@ import SessionRow from './SessionRow.astro';
       setTimeout(() => copyBtn.classList.remove('copied'), 1500);
       return;
     }
-    const btn = (e.target as HTMLElement).closest<HTMLAnchorElement>('[data-delete-id]');
-    if (!btn) return;
-    e.preventDefault();
-    btn.setAttribute('aria-busy', 'true');
-    await fetch(`/api/admin/session/${encodeURIComponent(btn.dataset.deleteId!)}`, { method: 'DELETE' });
-    const sessions = await fetchSessions();
-    if (sessions) renderSessions(sessions);
+    const row = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-href]');
+    if (row?.dataset.href) {
+      window.location.href = row.dataset.href;
+    }
   });
 
   document.addEventListener('admin:start-refresh', async () => {

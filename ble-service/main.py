@@ -8,7 +8,7 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BLE Display Service")
+app = FastAPI(title="BLE Info Display Service")
 
 
 async def _push_to_device(mac: str, image: Image.Image) -> dict:
@@ -35,7 +35,7 @@ async def scan(timeout: float = Query(default=5.0, ge=1.0, le=30.0)):
 
 @app.post("/push/{mac}")
 async def push_image(mac: str, request: Request):
-    """Push the raw image body to a single BLE display."""
+    """Push the raw image body to a single BLE Info Display."""
     image_bytes = await request.body()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty image body")

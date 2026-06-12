@@ -107,8 +107,12 @@ export class Application implements EinkApplication {
     this.sessions.delete(sessionId);
   }
 
-  getAdminSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
-    return this.store.getSessionsWithDetails();
+  getSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
+    return this.store.getSessions();
+  }
+
+  getSession(sessionId: string): { id: string; lastAccessedAt: string; generatorName: string | null } | null {
+    return this.store.getSessionById(sessionId);
   }
 
   scanBleDevices(timeout = 5): Promise<ScannedDevice[]> {

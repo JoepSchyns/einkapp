@@ -1,0 +1,290 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import CopyButton from '../../components/CopyButton.astro';
+---
+
+<Layout title="Session Details">
+  <header class="page-header">
+    <a href="/admin/" class="back-link">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+      </svg>
+      Admin
+    </a>
+    <h1>Session Details</h1>
+  </header>
+
+  <div id="loading">Loading…</div>
+
+  <div id="notFound" class="hidden">
+    <p>Session not found or you are not authenticated.</p>
+    <a href="/admin/">Back to admin</a>
+  </div>
+
+  <article id="sessionDetail" class="hidden">
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">Session ID</th>
+          <td class="id-row">
+            <code id="detailId"></code>
+            <CopyButton id="copyBtn" />
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Last Accessed</th>
+          <td id="detailDate"></td>
+        </tr>
+        <tr>
+          <th scope="row">Generator</th>
+          <td id="detailGenerator"></td>
+        </tr>
+        <tr>
+          <th scope="row">Links</th>
+          <td class="links-row">
+            <a id="detailInfoLink" target="_blank" rel="noopener">Info page</a>
+            <a id="detailImageLink" target="_blank" rel="noopener">Current image</a>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">BLE Info Displays</th>
+          <td>
+            <ul id="bleLinkedList" class="ble-list"></ul>
+            <button id="bleScanBtn" class="ble-action-btn secondary outline">Link a display</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div>
+      <button id="deleteBtn" class="delete-btn">Delete session</button>
+    </div>
+  </article>
+
+  <template id="bleLinkedItemTemplate">
+    <li class="ble-item">
+      <span data-field="label"></span>
+      <button data-field="removeBtn" class="ble-action-btn secondary outline">Remove</button>
+    </li>
+  </template>
+
+  <template id="bleEmptyTemplate">
+    <li class="ble-empty" data-field="message"></li>
+  </template>
+</Layout>
+
+<script>
+  interface Session {
+    id: string;
+    lastAccessedAt: string;
+    generatorName?: string;
+  }
+
+  interface BleDevice {
+    mac: string;
+    name: string | null;
+  }
+
+  // --- Elements ---
+
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('id');
+
+  const loadingEl = document.getElementById('loading')!;
+  const notFoundEl = document.getElementById('notFound')!;
+  const detailEl = document.getElementById('sessionDetail')!;
+  const bleLinkedList = document.getElementById('bleLinkedList')!;
+  const bleScanBtn = document.getElementById('bleScanBtn') as HTMLButtonElement;
+
+  // --- Visibility helpers ---
+
+  function showNotFound() {
+    loadingEl.classList.add('hidden');
+    notFoundEl.classList.remove('hidden');
+  }
+
+  function showDetail() {
+    loadingEl.classList.add('hidden');
+    detailEl.classList.remove('hidden');
+  }
+
+  // --- Session ---
+
+  async function init() {
+    if (!sessionId) { showNotFound(); return; }
+
+    const res = await fetch(`/api/admin/session/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) { showNotFound(); return; }
+
+    const session: Session = await res.json();
+
+    (document.getElementById('detailId')!).textContent = session.id;
+    (document.getElementById('detailDate')!).textContent = new Date(session.lastAccessedAt).toLocaleString();
+
+    const generatorEl = document.getElementById('detailGenerator')!;
+    if (session.generatorName) {
+      generatorEl.textContent = session.generatorName;
+    } else {
+      generatorEl.textContent = '—';
+      generatorEl.style.color = 'var(--pico-muted-color)';
+    }
+
+    (document.getElementById('detailInfoLink') as HTMLAnchorElement).href = `/info/?id=${encodeURIComponent(session.id)}`;
+    (document.getElementById('detailImageLink') as HTMLAnchorElement).href = `/api/session/${encodeURIComponent(session.id)}/image`;
+
+    showDetail();
+    bleScanBtn.addEventListener('click', () => { window.location.href = `/admin/ble-scan?id=${encodeURIComponent(session.id)}`; });
+    await loadLinkedBleDevices();
+  }
+
+  // --- Copy button ---
+
+  document.getElementById('copyBtn')!.addEventListener('click', async () => {
+    if (!sessionId) return;
+    await navigator.clipboard.writeText(sessionId);
+    const btn = document.getElementById('copyBtn')!;
+    btn.classList.add('copied');
+    setTimeout(() => btn.classList.remove('copied'), 1500);
+  });
+
+  // --- Delete button ---
+
+  document.getElementById('deleteBtn')!.addEventListener('click', async (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/session/${encodeURIComponent(sessionId!)}`, { method: 'DELETE' });
+      if (res.ok) {
+        window.location.href = '/admin/';
+      } else {
+        btn.removeAttribute('aria-busy');
+        btn.disabled = false;
+      }
+    } catch {
+      btn.removeAttribute('aria-busy');
+      btn.disabled = false;
+    }
+  });
+
+  // --- BLE device management ---
+
+  const linkedTemplate = document.getElementById('bleLinkedItemTemplate') as HTMLTemplateElement;
+  const emptyTemplate = document.getElementById('bleEmptyTemplate') as HTMLTemplateElement;
+
+  function makeEmpty(message: string): DocumentFragment {
+    const frag = emptyTemplate.content.cloneNode(true) as DocumentFragment;
+    (frag.querySelector('[data-field="message"]') as HTMLElement).textContent = message;
+    return frag;
+  }
+
+  function renderLinkedDevices(devices: BleDevice[]) {
+    bleLinkedList.innerHTML = '';
+    if (devices.length === 0) {
+      bleLinkedList.appendChild(makeEmpty('No displays linked.'));
+      return;
+    }
+    for (const d of devices) {
+      const frag = linkedTemplate.content.cloneNode(true) as DocumentFragment;
+      const field = (name: string) => frag.querySelector(`[data-field="${name}"]`) as HTMLElement;
+      field('label').textContent = d.name ? `${d.name} (${d.mac})` : d.mac;
+      const removeBtn = field('removeBtn') as HTMLButtonElement;
+      removeBtn.addEventListener('click', async () => {
+        removeBtn.disabled = true;
+        const res = await fetch(
+          `/api/admin/session/${encodeURIComponent(sessionId!)}/ble-device/${encodeURIComponent(d.mac)}`,
+          { method: 'DELETE' },
+        );
+        if (res.ok) await loadLinkedBleDevices();
+        else removeBtn.disabled = false;
+      });
+      bleLinkedList.appendChild(frag);
+    }
+  }
+
+  async function loadLinkedBleDevices() {
+    if (!sessionId) return;
+    const res = await fetch(`/api/admin/session/${encodeURIComponent(sessionId)}/ble-devices`);
+    if (!res.ok) return;
+    const { devices } = await res.json() as { devices: BleDevice[] };
+    renderLinkedDevices(devices);
+  }
+
+  init();
+</script>
+
+<style>
+  .hidden {
+    display: none;
+  }
+
+  .page-header {
+    position: relative;
+  }
+
+  .back-link {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.9rem;
+    text-decoration: none;
+  }
+
+  #sessionDetail {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  #sessionDetail table,
+  #sessionDetail th,
+  #sessionDetail td {
+    background-color: inherit;
+  }
+
+  #sessionDetail td {
+    word-break: break-all;
+    vertical-align: top;
+  }
+
+  .id-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+
+  .delete-btn {
+    display: block;
+    margin-left: auto;
+    margin-top: var(--pico-spacing);
+    background-color: var(--pico-del-color);
+    border-color: var(--pico-del-color);
+    color: #fff;
+  }
+
+  .ble-list {
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+  }
+
+  #sessionDetail ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .ble-item {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+    padding: 0.25rem 0 0.5rem;
+  }
+
+  .ble-action-btn {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    margin: 0;
+    flex-shrink: 0;
+  }
+</style>

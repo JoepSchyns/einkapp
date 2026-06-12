@@ -1,7 +1,7 @@
 [project]
 name = "ble-service"
 version = "0.1.0"
-description = "BLE display push service using py-opendisplay"
+description = "BLE Info Display push service using py-opendisplay"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

@@ -1,0 +1,285 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Link BLE Info Display">
+  <header class="page-header">
+    <a id="backLink" href="/admin/" class="back-link">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+      </svg>
+      Session
+    </a>
+    <h1>Link BLE Info Display</h1>
+  </header>
+
+  <div id="loading">Loading…</div>
+
+  <div id="notFound" class="hidden">
+    <p>Session not found or you are not authenticated.</p>
+    <a href="/admin/">Back to admin</a>
+  </div>
+
+  <article id="bleScanDetail" class="hidden">
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">Linked</th>
+          <td>
+            <ul id="bleLinkedList" class="ble-list"></ul>
+          </td>
+        </tr>
+        <tr id="discoveredRow" class="hidden">
+          <th scope="row">Found nearby</th>
+          <td>
+            <ul id="bleDiscoveredList" class="ble-list"></ul>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <button id="bleScanBtn" class="secondary outline scan-btn">Scan for displays</button>
+  </article>
+
+  <template id="bleLinkedItemTemplate">
+    <li class="ble-item">
+      <span data-field="label"></span>
+      <button data-field="removeBtn" class="ble-action-btn secondary outline">Remove</button>
+    </li>
+  </template>
+
+  <template id="bleDiscoveredItemTemplate">
+    <li class="ble-item">
+      <span data-field="label"></span>
+      <button data-field="addBtn" class="ble-action-btn">Add</button>
+    </li>
+  </template>
+
+  <template id="bleEmptyTemplate">
+    <li class="ble-empty" data-field="message"></li>
+  </template>
+</Layout>
+
+<script>
+  interface BleDevice {
+    mac: string;
+    name: string | null;
+  }
+
+  // --- Elements ---
+
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('id');
+
+  const loadingEl = document.getElementById('loading')!;
+  const notFoundEl = document.getElementById('notFound')!;
+  const detailEl = document.getElementById('bleScanDetail')!;
+  const bleLinkedList = document.getElementById('bleLinkedList')!;
+  const bleDiscoveredList = document.getElementById('bleDiscoveredList')!;
+  const discoveredRow = document.getElementById('discoveredRow')!;
+  const bleScanBtn = document.getElementById('bleScanBtn') as HTMLButtonElement;
+  const backLink = document.getElementById('backLink') as HTMLAnchorElement;
+
+  // --- Visibility helpers ---
+
+  function showNotFound() {
+    loadingEl.classList.add('hidden');
+    notFoundEl.classList.remove('hidden');
+  }
+
+  function showDetail() {
+    loadingEl.classList.add('hidden');
+    detailEl.classList.remove('hidden');
+  }
+
+  // --- Init ---
+
+  async function init() {
+    if (!sessionId) { showNotFound(); return; }
+
+    backLink.href = `/admin/session?id=${encodeURIComponent(sessionId)}`;
+
+    const res = await fetch(`/api/admin/session/${encodeURIComponent(sessionId)}`);
+    if (!res.ok) { showNotFound(); return; }
+
+    showDetail();
+    await loadLinkedBleDevices();
+  }
+
+  // --- BLE templates ---
+
+  const linkedTemplate = document.getElementById('bleLinkedItemTemplate') as HTMLTemplateElement;
+  const discoveredTemplate = document.getElementById('bleDiscoveredItemTemplate') as HTMLTemplateElement;
+  const emptyTemplate = document.getElementById('bleEmptyTemplate') as HTMLTemplateElement;
+
+  function makeEmpty(message: string): DocumentFragment {
+    const frag = emptyTemplate.content.cloneNode(true) as DocumentFragment;
+    (frag.querySelector('[data-field="message"]') as HTMLElement).textContent = message;
+    return frag;
+  }
+
+  // --- Linked devices ---
+
+  function renderLinkedDevices(devices: BleDevice[]) {
+    bleLinkedList.innerHTML = '';
+    if (devices.length === 0) {
+      bleLinkedList.appendChild(makeEmpty('No displays linked.'));
+      return;
+    }
+    for (const d of devices) {
+      const frag = linkedTemplate.content.cloneNode(true) as DocumentFragment;
+      const field = (name: string) => frag.querySelector(`[data-field="${name}"]`) as HTMLElement;
+      field('label').textContent = d.name ? `${d.name} (${d.mac})` : d.mac;
+      const removeBtn = field('removeBtn') as HTMLButtonElement;
+      removeBtn.addEventListener('click', async () => {
+        removeBtn.disabled = true;
+        const res = await fetch(
+          `/api/admin/session/${encodeURIComponent(sessionId!)}/ble-device/${encodeURIComponent(d.mac)}`,
+          { method: 'DELETE' },
+        );
+        if (res.ok) await loadLinkedBleDevices();
+        else removeBtn.disabled = false;
+      });
+      bleLinkedList.appendChild(frag);
+    }
+  }
+
+  async function loadLinkedBleDevices() {
+    if (!sessionId) return;
+    const res = await fetch(`/api/admin/session/${encodeURIComponent(sessionId)}/ble-devices`);
+    if (!res.ok) return;
+    const { devices } = await res.json() as { devices: BleDevice[] };
+    renderLinkedDevices(devices);
+  }
+
+  // --- Scan ---
+
+  bleScanBtn.addEventListener('click', async () => {
+    bleScanBtn.setAttribute('aria-busy', 'true');
+    bleScanBtn.disabled = true;
+    discoveredRow.classList.add('hidden');
+    bleDiscoveredList.innerHTML = '';
+    try {
+      const res = await fetch('/api/admin/ble/scan?timeout=5');
+      if (!res.ok) {
+        alert('BLE scan failed. Is the BLE service running?');
+        return;
+      }
+      const { devices } = await res.json() as { devices: { mac: string; name: string }[] };
+      if (devices.length === 0) {
+        bleDiscoveredList.appendChild(makeEmpty('No devices found nearby.'));
+      } else {
+        for (const d of devices) {
+          const frag = discoveredTemplate.content.cloneNode(true) as DocumentFragment;
+          const field = (name: string) => frag.querySelector(`[data-field="${name}"]`) as HTMLElement;
+          field('label').textContent = `${d.name} (${d.mac})`;
+          const addBtn = field('addBtn') as HTMLButtonElement;
+          bleDiscoveredList.appendChild(frag);
+          const li = bleDiscoveredList.lastElementChild as HTMLElement;
+          addBtn.addEventListener('click', async () => {
+            addBtn.disabled = true;
+            const addRes = await fetch(
+              `/api/admin/session/${encodeURIComponent(sessionId!)}/ble-device`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mac: d.mac, name: d.name }),
+              },
+            );
+            if (addRes.ok) {
+              li.remove();
+              await loadLinkedBleDevices();
+            } else {
+              addBtn.disabled = false;
+            }
+          });
+        }
+      }
+      discoveredRow.classList.remove('hidden');
+    } finally {
+      bleScanBtn.removeAttribute('aria-busy');
+      bleScanBtn.disabled = false;
+    }
+  });
+
+  init();
+</script>
+
+<style>
+  .hidden {
+    display: none;
+  }
+
+  .page-header {
+    position: relative;
+  }
+
+  .back-link {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.9rem;
+    text-decoration: none;
+  }
+
+  #bleScanDetail {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  #bleScanDetail table,
+  #bleScanDetail th,
+  #bleScanDetail td {
+    background-color: inherit;
+  }
+
+  #bleScanDetail th {
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    width: 1%;
+    vertical-align: top;
+  }
+
+  #bleScanDetail td {
+    vertical-align: top;
+  }
+
+  #bleScanDetail ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .ble-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+
+  .ble-empty {
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+    padding: 0.25rem 0;
+  }
+
+  .ble-action-btn {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  .scan-btn {
+    display: block;
+    margin-left: auto;
+    margin-top: var(--pico-spacing);
+  }
+</style>

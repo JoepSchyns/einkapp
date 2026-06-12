@@ -87,7 +87,14 @@ export function createAdminRouter(application: Application) {
   });
 
   admin.get('/sessions', requireAuth, (c) => {
-    return c.json(application.getAdminSessions());
+    return c.json(application.getSessions());
+  });
+
+  admin.get('/session/:id', requireAuth, (c) => {
+    const id = c.req.param('id');
+    const session = application.getSession(id);
+    if (!session) return c.json({ error: 'Session not found' }, 404);
+    return c.json(session);
   });
 
   admin.post('/session', requireAuth, async (c) => {

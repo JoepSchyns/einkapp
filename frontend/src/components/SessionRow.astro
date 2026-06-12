@@ -1,34 +1,25 @@
 ---
+import CopyButton from './CopyButton.astro';
 ---
 
 <template id="sessionRowTemplate">
-  <tr>
+  <tr class="session-row">
     <td class="id-cell">
       <code data-field="id"></code>
-      <button data-field="copyBtn" class="copy-btn" title="Copy session ID" aria-label="Copy session ID">
-        <svg class="icon-copy" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
-        <svg class="icon-check" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-      </button>
+      <CopyButton dataField="copyBtn" />
     </td>
     <td data-field="date"></td>
-    <td data-field="generator"></td>
-    <td>
-      <a data-field="infoLink" target="_blank" rel="noopener">Info</a>
-      {' | '}
-      <a data-field="imageLink" target="_blank" rel="noopener">Image</a>
-    </td>
-    <td>
-      <a data-field="deleteBtn" href="#" role="button" class="delete-btn">Delete</a>
+    <td class="actions-cell">
+      <a data-field="viewLink" class="arrow-link" aria-label="View session">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+        </svg>
+      </a>
     </td>
   </tr>
 </template>
 
-<style>
+<style is:global>
   .id-cell {
     white-space: nowrap;
   }
@@ -47,44 +38,26 @@
     }
   }
 
-  .copy-btn {
-    display: inline-flex;
-    align-items: center;
-    background: none;
-    border: none;
-    padding: 0.15rem 0.25rem;
-    margin: 0;
+  .actions-cell {
+    text-align: center;
+  }
+
+  .session-row {
     cursor: pointer;
+  }
+
+  .session-row:hover td {
+    background-color: var(--pico-table-row-stripped-background-color, rgba(0,0,0,0.035));
+  }
+
+  .arrow-link {
+    font-size: 1.1rem;
+    text-decoration: none;
     color: var(--pico-muted-color);
-    vertical-align: middle;
+    padding: 0 0.25rem;
   }
 
-  .copy-btn:hover,
-  .copy-btn.copied {
-    color: var(--pico-ins-color);
-  }
-
-  .copy-btn .icon-check {
-    display: none;
-  }
-
-  .copy-btn.copied .icon-copy {
-    display: none;
-  }
-
-  .copy-btn.copied .icon-check {
-    display: inline;
-  }
-
-  .delete-btn {
-    font-size: 0.8rem;
-    padding: 0.1rem 0.6rem;
-    background-color: var(--pico-del-color);
-    border-color: var(--pico-del-color);
-    color: #fff;
-  }
-
-  .delete-btn:hover {
-    filter: brightness(0.85);
+  .arrow-link:hover {
+    color: var(--pico-primary);
   }
 </style>
