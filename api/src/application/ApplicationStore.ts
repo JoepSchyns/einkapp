@@ -48,4 +48,27 @@ export class ApplicationStore extends Store {
       generatorName: row.last_accessed_generator_name,
     }));
   }
+
+  getSessionBleDevices(sessionId: string): { mac: string; name: string | null }[] {
+    const rows = Store.db
+      .prepare(`SELECT mac_address, device_name FROM session_ble_devices WHERE session_id = ?`)
+      .all(sessionId) as { mac_address: string; device_name: string | null }[];
+    return rows.map((r) => ({ mac: r.mac_address, name: r.device_name }));
+  }
+
+  addSessionBleDevice(sessionId: string, mac: string, name: string | null): void {
+    Store.db
+      .prepare(
+        `INSERT INTO session_ble_devices (session_id, mac_address, device_name)
+         VALUES (?, ?, ?)
+         ON CONFLICT (session_id, mac_address) DO UPDATE SET device_name = excluded.device_name`,
+      )
+      .run(sessionId, mac, name ?? null);
+  }
+
+  removeSessionBleDevice(sessionId: string, mac: string): void {
+    Store.db
+      .prepare(`DELETE FROM session_ble_devices WHERE session_id = ? AND mac_address = ?`)
+      .run(sessionId, mac);
+  }
 }

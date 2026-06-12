@@ -1,6 +1,8 @@
 import { Session } from '../session/Session.js';
 import type { EinkApplication, ContentInfo } from '../types/index.js';
 import { ApplicationStore } from './ApplicationStore.js';
+import { BleService } from '../ble/BleService.js';
+import type { BleDevice, ScannedDevice } from '../ble/BleService.js';
 
 export class Application implements EinkApplication {
   private static readonly SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
@@ -9,6 +11,8 @@ export class Application implements EinkApplication {
   private store: ApplicationStore;
   private readonly sessions = new Map<string, Session>();
   private infoSubscribers = new Map<string, ((info: ContentInfo) => void)[]>();
+  private readonly bleService = new BleService();
+  
   constructor() {
     this.store = new ApplicationStore();
     const kick = () => {
@@ -53,9 +57,17 @@ export class Application implements EinkApplication {
     const session = this.getSessionById(sessionId);
     this.store.updateSessionAccessTime(sessionId);
     const content = await session.getContent();
+
+    // TODO notify all BLE devices
+    // await Promise.all(this.store.getSessionBleDevices(sessionId).map(device => 
+    //   this.bleService.pushImage([device], Buffer.from(TODO), content.contentType)
+    // ));
+
+    // Notify all info-sse subscribers
     const subscribers = this.infoSubscribers.get(sessionId) || [];
     await Promise.all(subscribers.map(async (cb) => cb(await session.getInfo())));
-    return content;
+    
+    return { stream: content.stream, contentType: content.contentType };
   }
   getInfo(sessionId: string): Promise<ContentInfo> {
     const session = this.getSessionById(sessionId);
@@ -97,5 +109,24 @@ export class Application implements EinkApplication {
 
   getAdminSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
     return this.store.getSessionsWithDetails();
+  }
+
+  scanBleDevices(timeout = 5): Promise<ScannedDevice[]> {
+    return this.bleService.scan(timeout);
+  }
+
+  getSessionBleDevices(sessionId: string): BleDevice[] {
+    this.getSessionById(sessionId); // validates session exists
+    return this.store.getSessionBleDevices(sessionId);
+  }
+
+  addSessionBleDevice(sessionId: string, mac: string, name: string | null): void {
+    this.getSessionById(sessionId); // validates session exists
+    this.store.addSessionBleDevice(sessionId, mac, name);
+  }
+
+  removeSessionBleDevice(sessionId: string, mac: string): void {
+    this.getSessionById(sessionId); // validates session exists
+    this.store.removeSessionBleDevice(sessionId, mac);
   }
 }

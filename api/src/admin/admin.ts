@@ -6,6 +6,8 @@ import type { MiddlewareHandler } from 'hono';
 import { AdminStore } from './AdminStore.js';
 import type { Application } from '../application/Application.js';
 
+const BLUETOOTH_MAX_SCAN_TIMEOUT = 30; // seconds
+
 const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -97,6 +99,58 @@ export function createAdminRouter(application: Application) {
     const id = c.req.param('id');
     try {
       application.deleteSession(id);
+      return c.json({ ok: true });
+    } catch {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+  });
+
+  admin.get('/ble/scan', requireAuth, async (c) => {
+    const timeout = Math.min(Number(c.req.query('timeout') ?? 5), BLUETOOTH_MAX_SCAN_TIMEOUT);
+    try {
+      const devices = await application.scanBleDevices(timeout);
+      return c.json({ devices });
+    } catch (err) {
+      console.error('[BLE] scan error:', err);
+      return c.json({ error: 'BLE scan failed. Is the BLE service running?' }, 503);
+    }
+  });
+
+  admin.get('/session/:id/ble-devices', requireAuth, (c) => {
+    const id = c.req.param('id');
+    try {
+      const devices = application.getSessionBleDevices(id);
+      return c.json({ devices });
+    } catch {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+  });
+
+  admin.post('/session/:id/ble-device', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    let mac: string;
+    let name: string | undefined | null;
+    try {
+      ({ mac, name } = await c.req.json<{ mac: string; name?: string | null }>());
+    } catch {
+      return c.json({ error: 'Invalid request body' }, 400);
+    }
+    if (typeof mac !== 'string' || !/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac)) {
+      return c.json({ error: 'Invalid MAC address' }, 400);
+    }
+    try {
+      application.addSessionBleDevice(id, mac.toUpperCase(), name ?? null);
+      return c.json({ ok: true }, 201);
+    } catch {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+  });
+
+  admin.delete('/session/:id/ble-device/:mac', requireAuth, (c) => {
+    const id = c.req.param('id');
+    const mac = c.req.param('mac');
+    try {
+      application.removeSessionBleDevice(id, mac.toUpperCase());
       return c.json({ ok: true });
     } catch {
       return c.json({ error: 'Session not found' }, 404);

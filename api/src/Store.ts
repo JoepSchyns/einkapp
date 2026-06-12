@@ -26,6 +26,14 @@ export abstract class Store {
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS session_ble_devices (
+                session_id TEXT NOT NULL,
+                mac_address TEXT NOT NULL,
+                device_name TEXT,
+                PRIMARY KEY (session_id, mac_address),
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
         `);
   }
 }

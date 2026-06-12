@@ -12,6 +12,17 @@ services:
       - JWT_SECRET
     volumes:
       - ./data/api:/app/data
+    depends_on:
+      - ble-service
+
+  ble-service:
+    build: ./ble-service
+    expose:
+      - "8000"
+    # Bluetooth access on Linux requires D-Bus and elevated privileges.
+    privileged: true
+    volumes:
+      - /var/run/dbus:/var/run/dbus
 
   frontend:
     build: ./frontend
