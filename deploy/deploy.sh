@@ -59,6 +59,6 @@ echo "[deploy] Restarting services..."
 docker compose up -d --remove-orphans
 
 echo "[deploy] Pruning unused images..."
-docker image prune -f
+docker image prune
 
 echo "[deploy] Done."
