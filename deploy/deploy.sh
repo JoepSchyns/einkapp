@@ -62,5 +62,3 @@ echo "[deploy] Pruning unused images..."
 docker image prune -f
 
 echo "[deploy] Done."
-
--f ink
