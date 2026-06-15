@@ -12,7 +12,9 @@ export class BleService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl = (process.env.BLE_SERVICE_URL ?? 'http://ble-service:8000').replace(/\/$/, '');
+    const url = process.env.BLE_SERVICE_URL ?? 'http://ble-service';
+    const port = process.env.BLE_SERVICE_PORT ?? '8000';
+    this.baseUrl = `${url}:${port}`.replace(/\/$/, '');
   }
 
   async scan(timeout = 5): Promise<ScannedDevice[]> {

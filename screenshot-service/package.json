@@ -1,0 +1,17 @@
+{
+  "name": "screenshot-service",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  }
+}

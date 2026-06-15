@@ -1,0 +1,7 @@
+services:
+  screenshot-service:
+    ports:
+      - "${SCREENSHOT_SERVICE_PORT}:${SCREENSHOT_SERVICE_PORT}"
+  ble-service:
+    ports:
+      - "${BLE_SERVICE_PORT}:${BLE_SERVICE_PORT}"

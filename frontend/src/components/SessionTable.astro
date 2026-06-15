@@ -59,6 +59,7 @@ import SessionRow from './SessionRow.astro';
       (field('viewLink') as HTMLAnchorElement).href = `/admin/session?id=${encodeURIComponent(s.id)}`;
       (field('copyBtn') as HTMLButtonElement).dataset.copyId = s.id;
       (row.querySelector('tr') as HTMLTableRowElement).dataset.href = `/admin/session?id=${encodeURIComponent(s.id)}`;
+
       tbody.appendChild(row);
     }
   }
@@ -138,9 +139,7 @@ import SessionRow from './SessionRow.astro';
       return;
     }
     const row = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-href]');
-    if (row?.dataset.href) {
-      window.location.href = row.dataset.href;
-    }
+    if (row?.dataset.href) window.location.href = row.dataset.href;
   });
 
   document.addEventListener('admin:start-refresh', async () => {

@@ -104,6 +104,7 @@
   const statusEl = document.getElementById('status')!;
   const qrCanvas = document.getElementById('qr') as HTMLCanvasElement;
   const id = new URLSearchParams(location.search).get('id');
+  const baseUrl = import.meta.env.PUBLIC_SITE_URL ?? location.origin;
 
   qrCanvas.classList.add('hidden');
 
@@ -134,7 +135,7 @@
       descEl.classList.remove('hidden');
 
       if (info.sourceUrl) {
-        const shortUrl = `${location.origin}/api/session/${id}/source`;
+        const shortUrl = `${baseUrl}/api/session/${id}/source`;
         await QRCode.toCanvas(qrCanvas, shortUrl, {
           width: 80,
           margin: 1,

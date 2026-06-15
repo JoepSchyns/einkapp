@@ -1,4 +1,5 @@
 import logging
+import os
 from io import BytesIO
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -50,9 +51,9 @@ async def push_image(mac: str, request: Request):
 
 def _dev():
     import uvicorn
-    uvicorn.run("main:app", reload=True, port=8000)
+    uvicorn.run("main:app", reload=True, port=int(os.environ.get("PORT", 8000)))
 
 
 def _prod():
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))

@@ -3,6 +3,7 @@ import type { EinkApplication, ContentInfo } from '../types/index.js';
 import { ApplicationStore } from './ApplicationStore.js';
 import { BleService } from '../ble/BleService.js';
 import type { BleDevice, ScannedDevice } from '../ble/BleService.js';
+import { ScreenshotService } from '../screenshot/ScreenshotService.js';
 
 export class Application implements EinkApplication {
   private static readonly SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
@@ -12,6 +13,7 @@ export class Application implements EinkApplication {
   private readonly sessions = new Map<string, Session>();
   private infoSubscribers = new Map<string, ((info: ContentInfo) => void)[]>();
   private readonly bleService = new BleService();
+  private readonly screenshotService = new ScreenshotService();
   
   constructor() {
     this.store = new ApplicationStore();
@@ -58,15 +60,23 @@ export class Application implements EinkApplication {
     this.store.updateSessionAccessTime(sessionId);
     const content = await session.getContent();
 
-    // TODO notify all BLE devices
-    // await Promise.all(this.store.getSessionBleDevices(sessionId).map(device => 
-    //   this.bleService.pushImage([device], Buffer.from(TODO), content.contentType)
-    // ));
-
-    // Notify all info-sse subscribers
+    // Notify all info-sse subscribers first so info is up-to-date before screenshotting
     const subscribers = this.infoSubscribers.get(sessionId) || [];
     await Promise.all(subscribers.map(async (cb) => cb(await session.getInfo())));
-    
+
+    // Push a screenshot of the info page to all linked BLE displays
+    const bleDevices = this.store.getSessionBleDevices(sessionId);
+    if (bleDevices.length > 0) {
+      try {
+        const frontendUrl = (process.env.FRONTEND_INTERNAL_URL ?? 'http://frontend').replace(/\/$/, '');
+        const infoUrl = `${frontendUrl}/info?id=${encodeURIComponent(sessionId)}`;
+        const imageBytes = await this.screenshotService.screenshot(infoUrl, 250, 122, '#title:not(.hidden)');
+        await this.bleService.pushImage(bleDevices, imageBytes, 'image/png');
+      } catch (err) {
+        console.error('Failed to push screenshot to BLE devices:', err);
+      }
+    }
+
     return { stream: content.stream, contentType: content.contentType };
   }
   getInfo(sessionId: string): Promise<ContentInfo> {
