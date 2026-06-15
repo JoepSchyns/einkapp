@@ -1,0 +1,56 @@
+# Sample production docker-compose.yml
+# Place this at /data/docker/eink/docker-compose.yml on the production server.
+# All values are read from a .env file in the same directory.
+# Do NOT copy docker-compose.override.yml to the server — it is dev-only.
+
+services:
+  api:
+    image: ghcr.io/<your-github-username>/einkapp-api:latest
+    expose:
+      - "${API_PORT}"
+    environment:
+      - API_PORT
+      - REDDIT_CLIENT_ID
+      - REDDIT_CLIENT_SECRET
+      - UNSPLASH_ACCESS_KEY
+      - ADMIN_USERNAME
+      - ADMIN_PASSWORD
+      - JWT_SECRET
+      - BLE_SERVICE_URL
+      - BLE_SERVICE_PORT
+      - SCREENSHOT_SERVICE_URL
+      - SCREENSHOT_SERVICE_PORT
+      - FRONTEND_URL
+    volumes:
+      - ./data/api:/app/data
+    depends_on:
+      - ble-service
+      - screenshot-service
+    restart: unless-stopped
+
+  screenshot-service:
+    image: ghcr.io/<your-github-username>/einkapp-screenshot-service:latest
+    expose:
+      - "${SCREENSHOT_SERVICE_PORT}"
+    environment:
+      - PORT=${SCREENSHOT_SERVICE_PORT}
+    restart: unless-stopped
+
+  ble-service:
+    image: ghcr.io/<your-github-username>/einkapp-ble-service:latest
+    expose:
+      - "${BLE_SERVICE_PORT}"
+    environment:
+      - PORT=${BLE_SERVICE_PORT}
+    privileged: true
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/<your-github-username>/einkapp-frontend:latest
+    ports:
+      - "${FRONTEND_PORT}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
