@@ -2,7 +2,7 @@
 
 This repository contains the code for an e-ink painting displayed in our living room. The painting is a [Visionect Place & Play](https://www.visionect.com/) that wirelessly cycles through art from various sources every half hour.
 
-To make it feel like a real museum piece, I added an information card next to the painting — just like you would find in a gallery. This card is a small secondary e-ink display (Crowpanel 2.13) that shows the title, description, and a QR code linking to the source of the currently displayed artwork. Communication with the Crowpanel uses the [OpenDisplay](https://opendisplay.org/) protocol. Since the OpenDisplay firmware did not support the Crowpanel out of the box, I added support for it — a contribution I hope to eventually get merged upstream.
+To make it feel like a real museum piece, I added an information card next to the painting just like you would find in a gallery. This card is a small secondary e-ink display (Crowpanel 2.13) that shows the title, description, and a QR code linking to the source of the currently displayed artwork. Communication with the Crowpanel uses the [OpenDisplay](https://opendisplay.org/) protocol. Since the OpenDisplay firmware did not support the Crowpanel out of the box, I added support for it. A contribution I hope to eventually get merged upstream.
 
 Art is fetched from a variety of sources (Reddit, Unsplash, Art Institute of Chicago, Rijksmuseum, and more), each implemented as a separate module. The architecture is designed to make adding new sources as simple and straightforward as possible.
 
@@ -48,17 +48,17 @@ Browser3["Browser\n Info Display"] --> |"HTTPS"| Proxy
     <tr>
       <td align="center" width="50%">
         <img src="https://placehold.co/480x300" alt="Living room setup" width="320" /><br/>
-        <sub><em>Living room — main display & info card</em></sub>
+        <sub><em>Living room - main display & info card</em></sub>
       </td>
       <td align="center" width="50%">
         <img src="docs/infocard.jpg" alt="Info display" width="320" /><br/>
-        <sub><em>Info page — title, description & QR code</em></sub>
+        <sub><em>Info page - title, description & QR code</em></sub>
       </td>
     </tr>
     <tr >
       <td align="center">
-        <img src="docs/session.jpg" alt="Admin — session overview" width="320" /><br/>
-        <sub><em>Admin — session overview</em></sub>
+        <img src="docs/session.jpg" alt="Admin - session overview" width="320" /><br/>
+        <sub><em>Admin - session overview</em></sub>
       </td>
     </tr>
   </table>
