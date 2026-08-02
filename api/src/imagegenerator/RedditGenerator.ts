@@ -60,11 +60,26 @@ export abstract class RedditGenerator extends ImageGenerator<RedditData> {
   }
   async getContent(after?: string): Promise<{ stream: ReadableStream; contentType: string }> {
     const redditData = await this.redditAuthFetch(after);
-    const {
-      data: { after: newAfter, children },
-    } = (await redditData.json()) as { data: { after: string; children: RedditPost[] } };
+
+    const rawBody = await redditData.text();
+    let newAfter: string | undefined;
+    let children: RedditPost[] = [];
+    try {
+      const parsedData = JSON.parse(rawBody) as {
+        data: {
+          after: string;
+          children: RedditPost[];
+        };
+      }; 
+      newAfter = parsedData.data.after;
+      children = parsedData.data.children;
+    } catch (error) {
+      console.error("Failed to parse JSON response. Raw content received:");
+      console.error(rawBody);
+    }
+    
     if (!children || children.length === 0) {
-      throw new Error(`No posts found in subreddit ${this.subreddit}`);
+     throw new Error(`No posts found in subreddit ${this.subreddit}`);
     }
     const imagePosts = children.filter(this.isPostGoodImage);
     if (imagePosts.length === 0) {
