@@ -36,8 +36,8 @@ const withRetry = (handler: Handler, maxRetries = 3, delayMs = 300): Handler => 
 
 api.get('/session/:id/image', withRetry(async (c) => {
   const id = c.req.param('id');
-  const { stream, contentType } = await application.getContent(id);
-  return c.body(stream, 200, { 'Content-Type': contentType ?? 'application/octet-stream' });
+  const { stream, contentType } = await application.getContent(id!);
+  return c.body(stream, 200, { 'Content-Type': contentType});
 }));
 
 api.get('/session/:id/image/resize', withRetry( async (c) => {
@@ -54,7 +54,7 @@ api.get('/session/:id/image/resize', withRetry( async (c) => {
   if (!w || !h || w <= 0 || h <= 0) {
     return c.text('Query parameters w and h must be positive integers.', 400);
   }
-  const { stream, contentType } = await application.getContent(id);
+  const { stream, contentType } = await application.getContent(id!);
   const pipeline = Readable.fromWeb(stream).pipe(
     sharp()
     .resize(w, h, { fit })
@@ -62,7 +62,7 @@ api.get('/session/:id/image/resize', withRetry( async (c) => {
       brightness
     })
   );
-  return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType ?? 'application/octet-stream' });
+  return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
 }));
 
 api.get('/session/:id/info', async (c) => {
