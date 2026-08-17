@@ -6,7 +6,6 @@ import sharp from 'sharp';
 import type { FitEnum } from 'sharp';
 import { Readable } from 'node:stream';
 import { createAdminRouter } from './admin/admin.js';
-import { retryMiddleware } from './middleware/try-again.js'
 
 const application = new Application();
 
@@ -19,13 +18,29 @@ app.onError((error, c) => {
 
 const api = new Hono();
 
-api.get('/session/:id/image', retryMiddleware({ maxRetries: 3, delayMs: 200 }), async (c) => {
+const withRetry = (handler: Handler, maxRetries = 3, delayMs = 300): Handler => {
+  return async (c: Context) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await handler(c)
+        if (res.ok || attempt === maxRetries) return res
+      } catch (err) {
+        if (attempt === maxRetries) throw err
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
+    }
+    return c.json({ error: 'Request failed after retries' }, 500)
+  }
+}
+
+
+api.get('/session/:id/image', withRetry(async (c) => {
   const id = c.req.param('id');
   const { stream, contentType } = await application.getContent(id);
   return c.body(stream, 200, { 'Content-Type': contentType });
-});
+}));
 
-api.get('/session/:id/image/resize', retryMiddleware({ maxRetries: 3, delayMs: 200 }), async (c) => {
+api.get('/session/:id/image/resize', withRetry( async (c) => {
   const id = c.req.param('id');
   const w = parseInt(c.req.query('w') ?? '', 10);
   const h = parseInt(c.req.query('h') ?? '', 10);
@@ -48,7 +63,7 @@ api.get('/session/:id/image/resize', retryMiddleware({ maxRetries: 3, delayMs: 2
     })
   );
   return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
-});
+}));
 
 api.get('/session/:id/info', async (c) => {
   const id = c.req.param('id');
