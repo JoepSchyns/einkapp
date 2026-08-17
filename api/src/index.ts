@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
+import { Hono, Context, Handler } from 'hono';
 import { Application } from './application/Application.js';
 import { streamSSE } from 'hono/streaming';
 import sharp from 'sharp';
