@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import { Hono, type Context, type Handler } from 'hono';
+import { Hono, type Handler } from 'hono';
 import { Application } from './application/Application.js';
 import { streamSSE } from 'hono/streaming';
 import sharp from 'sharp';
@@ -19,10 +19,10 @@ app.onError((error, c) => {
 const api = new Hono();
 
 const withRetry = (handler: Handler, maxRetries = 3, delayMs = 300): Handler => {
-  return async (c: Context) => {
+  return async (c, next) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await handler(c)
+        const res = await handler(c, next)
         if (res.ok || attempt === maxRetries) return res
       } catch (err) {
         if (attempt === maxRetries) throw err
