@@ -37,7 +37,7 @@ const withRetry = (handler: Handler, maxRetries = 3, delayMs = 300): Handler => 
 api.get('/session/:id/image', withRetry(async (c) => {
   const id = c.req.param('id');
   const { stream, contentType } = await application.getContent(id);
-  return c.body(stream, 200, { 'Content-Type': contentType });
+  return c.body(stream, 200, { 'Content-Type': contentType ?? 'application/octet-stream' });
 }));
 
 api.get('/session/:id/image/resize', withRetry( async (c) => {
@@ -62,7 +62,7 @@ api.get('/session/:id/image/resize', withRetry( async (c) => {
       brightness
     })
   );
-  return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType });
+  return c.body(Readable.toWeb(pipeline) as ReadableStream, 200, { 'Content-Type': contentType ?? 'application/octet-stream' });
 }));
 
 api.get('/session/:id/info', async (c) => {
