@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import type { FitEnum } from 'sharp';
 import { Readable } from 'node:stream';
 import { createAdminRouter } from './admin/admin.js';
+import { retryMiddleware } from './middleware/try-again.js'
 
 const application = new Application();
 
@@ -18,13 +19,13 @@ app.onError((error, c) => {
 
 const api = new Hono();
 
-api.get('/session/:id/image', async (c) => {
+api.get('/session/:id/image', retryMiddleware({ maxRetries: 3, delayMs: 200 }), async (c) => {
   const id = c.req.param('id');
   const { stream, contentType } = await application.getContent(id);
   return c.body(stream, 200, { 'Content-Type': contentType });
 });
 
-api.get('/session/:id/image/resize', async (c) => {
+api.get('/session/:id/image/resize', retryMiddleware({ maxRetries: 3, delayMs: 200 }), async (c) => {
   const id = c.req.param('id');
   const w = parseInt(c.req.query('w') ?? '', 10);
   const h = parseInt(c.req.query('h') ?? '', 10);
