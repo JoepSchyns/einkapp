@@ -22,17 +22,25 @@ const withRetry = (handler: Handler, maxRetries = 3, delayMs = 300): Handler => 
   return async (c, next) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await handler(c, next)
-        if (res.ok || attempt === maxRetries) return res
-      } catch (err) {
-        if (attempt === maxRetries) throw err
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
-    }
-    return c.json({ error: 'Request failed after retries' }, 500)
-  }
-}
+        const res = await handler(c, next);
+        const contentType = res.headers.get('Content-Type') ?? '';
 
+        // Check if the response was successful and returned an image
+        if (res.ok && contentType.startsWith('image/')) {
+          return res;
+        }
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+      }
+
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+      }
+    }
+
+    return c.json({ error: 'Failed to retrieve image content after retries' }, 500);
+  };
+};
 
 api.get('/session/:id/image', withRetry(async (c) => {
   const id = c.req.param('id');
