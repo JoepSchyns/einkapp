@@ -1,0 +1,29 @@
+---
+/** Pulsing dot that marks something as updating live */
+---
+
+<span class="live-dot" aria-hidden="true"></span>
+
+<style>
+  .live-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-right: 0.35rem;
+    border-radius: 50%;
+    background: var(--pico-ins-color);
+    animation: live-pulse 2s infinite;
+  }
+
+  @keyframes live-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .live-dot {
+      animation: none;
+    }
+  }
+</style>

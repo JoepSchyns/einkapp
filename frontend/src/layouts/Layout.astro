@@ -24,13 +24,19 @@ const { title } = Astro.props;
 <style is:global>
   @import '@picocss/pico';
 
-  .page-header {
-    text-align: center;
-    padding-top: 2rem;
-    margin-bottom: 2rem;
+  .form-error {
+    color: var(--pico-del-color);
   }
 
-  .page-header h1 {
-    margin-bottom: 0;
+  .form-error:empty {
+    display: none;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  .muted {
+    color: var(--pico-muted-color);
   }
 </style>

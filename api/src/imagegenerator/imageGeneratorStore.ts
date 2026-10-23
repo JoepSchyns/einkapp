@@ -2,6 +2,22 @@ import { Store } from '../Store.js';
 import type { ContentInfo, JsonObject } from '../types/index.js';
 
 export class ImageGeneratorStore<PrevDataT extends JsonObject> extends Store {
+  /**
+   * Forgets a generator's cursor/history, e.g. after its parameters changed, because that history
+   * belongs to the old parameters. Without a session id this applies to every session.
+   */
+  static clearPrevData(generatorName: string, sessionId?: string) {
+    if (sessionId) {
+      Store.db
+        .prepare(`UPDATE session_generator_data SET prev_data = NULL WHERE generator_name = ? AND session_id = ?`)
+        .run(generatorName, sessionId);
+    } else {
+      Store.db
+        .prepare(`UPDATE session_generator_data SET prev_data = NULL WHERE generator_name = ?`)
+        .run(generatorName);
+    }
+  }
+
   constructor(
     private sessionId: string,
     private generatorName: string

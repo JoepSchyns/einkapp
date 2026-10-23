@@ -1,0 +1,73 @@
+---
+---
+
+<section role="tabpanel" data-panel="overview" hidden>
+  <article>
+    <table class="details">
+      <tbody>
+        <tr><th scope="row">Created</th><td id="detailCreated"></td></tr>
+        <tr><th scope="row">Last image</th><td id="detailDate"></td></tr>
+        <tr><th scope="row">Expires</th><td id="detailExpires"></td></tr>
+        <tr><th scope="row">Sources</th><td id="detailSources"></td></tr>
+        <tr><th scope="row">Last source</th><td id="detailGenerator"></td></tr>
+        <tr>
+          <th scope="row">Info page</th>
+          <td><a id="detailInfoLink" target="_blank" rel="noopener">Open info page</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </article>
+</section>
+
+<script>
+  import { formatHours, formatRelative, sourceLabel } from '../../lib/adminApi';
+  import { $, setMuted } from '../../lib/dom';
+  import { on, state } from './sessionPage';
+
+  function render() {
+    const session = state.session!;
+    const sources = state.global!.sources;
+    $('detailCreated').textContent = session.createdAt ? new Date(session.createdAt).toLocaleString() : '—';
+    $('detailDate').textContent = new Date(session.lastAccessedAt).toLocaleString();
+
+    const ttlNote = session.settings.ttlHours === null ? ' (global default)' : '';
+    $('detailExpires').textContent = session.expiresAt
+      ? `${formatRelative(session.expiresAt)}, after ${formatHours(session.ttlHours)} of inactivity${ttlNote}`
+      : `Never${ttlNote}`;
+
+    const labels = session.effectiveSources.map((name) => sourceLabel(sources, name));
+    $('detailSources').textContent = labels.length ? labels.join(', ') : 'None, so no images can be generated';
+
+    const generator = $('detailGenerator');
+    generator.classList.remove('muted');
+    if (session.generatorName) generator.textContent = sourceLabel(sources, session.generatorName);
+    else setMuted(generator, '—');
+
+    $<HTMLAnchorElement>('detailInfoLink').href = `/info/?id=${encodeURIComponent(session.id)}`;
+  }
+
+  on('session', render);
+  on('tick', render);
+</script>
+
+<style>
+  .details,
+  .details th,
+  .details td {
+    background-color: inherit;
+  }
+
+  .details {
+    margin-bottom: 0;
+  }
+
+  .details th {
+    width: 11rem;
+    color: var(--pico-muted-color);
+  }
+
+  .details td {
+    word-break: break-word;
+    vertical-align: top;
+  }
+</style>

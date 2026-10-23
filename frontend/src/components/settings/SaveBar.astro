@@ -1,0 +1,195 @@
+---
+/**
+ * Bar fixed to the bottom of the screen that slides up while a form has unsaved changes, so
+ * saving never requires scrolling to the end of a long form.
+ * Connect it to a form with `init()` once `customElements.whenDefined('save-bar')` resolves.
+ */
+interface Props {
+  id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<save-bar id={id} class="save-bar" role="region" aria-label="Unsaved changes">
+  <div class="save-bar-inner container">
+    <span class="save-bar-message"></span>
+    <div class="save-bar-actions">
+      <button type="button" class="secondary outline" data-action="discard">Discard</button>
+      <button type="button" data-action="save">Save changes</button>
+    </div>
+  </div>
+</save-bar>
+
+<script>
+  interface SaveBarOptions {
+    /** Element whose input/change events mark the form as changed */
+    watch: HTMLElement;
+    /** Serialized form state; the bar shows while it differs from the last reset */
+    state: () => string;
+    /** Saves the form; return an error message to show it in the bar */
+    onSave: () => Promise<string | void>;
+    onDiscard: () => void;
+  }
+
+  class SaveBarElement extends HTMLElement {
+    private isDirtyFn: () => boolean = () => false;
+    private resetFn: () => void = () => {};
+
+    init(options: SaveBarOptions) {
+      const message = this.querySelector('.save-bar-message') as HTMLElement;
+      const saveBtn = this.querySelector('[data-action="save"]') as HTMLButtonElement;
+      const discardBtn = this.querySelector('[data-action="discard"]') as HTMLButtonElement;
+      let initial = options.state();
+      let saving = false;
+      let justSaved = false;
+
+      const isDirty = () => options.state() !== initial;
+
+      const update = () => {
+        const dirty = isDirty();
+        this.classList.toggle('save-bar-visible', dirty || saving || justSaved);
+        this.classList.toggle('save-bar-saved', justSaved && !dirty);
+        if (dirty && !saving && !message.classList.contains('save-bar-error')) {
+          message.textContent = 'You have unsaved changes';
+        }
+      };
+
+      const showMessage = (text: string, kind: 'error' | 'info') => {
+        message.textContent = text;
+        message.classList.toggle('save-bar-error', kind === 'error');
+      };
+
+      options.watch.addEventListener('input', () => {
+        message.classList.remove('save-bar-error');
+        update();
+      });
+      options.watch.addEventListener('change', update);
+
+      saveBtn.addEventListener('click', async () => {
+        saving = true;
+        saveBtn.setAttribute('aria-busy', 'true');
+        saveBtn.disabled = discardBtn.disabled = true;
+        try {
+          const error = await options.onSave();
+          if (error) {
+            showMessage(error, 'error');
+          } else {
+            initial = options.state();
+            showMessage('Changes saved', 'info');
+            justSaved = true;
+            setTimeout(() => {
+              justSaved = false;
+              update();
+            }, 1500);
+          }
+        } catch (err) {
+          showMessage((err as Error).message, 'error');
+        } finally {
+          saving = false;
+          saveBtn.removeAttribute('aria-busy');
+          saveBtn.disabled = discardBtn.disabled = false;
+          update();
+        }
+      });
+
+      discardBtn.addEventListener('click', () => {
+        options.onDiscard();
+        message.classList.remove('save-bar-error');
+      });
+
+      window.addEventListener('beforeunload', (e) => {
+        if (isDirty()) e.preventDefault();
+      });
+
+      this.isDirtyFn = isDirty;
+      this.resetFn = () => {
+        initial = options.state();
+        message.classList.remove('save-bar-error');
+        update();
+      };
+    }
+
+    /** Re-reads the form state, e.g. after rendering or saving */
+    reset() {
+      this.resetFn();
+    }
+
+    isDirty() {
+      return this.isDirtyFn();
+    }
+  }
+
+  customElements.define('save-bar', SaveBarElement);
+
+  declare global {
+    interface HTMLElementTagNameMap {
+      'save-bar': SaveBarElement;
+    }
+  }
+</script>
+
+<style>
+  .save-bar {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    background: var(--pico-card-background-color);
+    border-top: 1px solid var(--pico-muted-border-color);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(110%);
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
+  .save-bar-visible {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease;
+  }
+
+  .save-bar-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+
+  .save-bar-message {
+    font-size: 0.9rem;
+  }
+
+  .save-bar-error {
+    color: var(--pico-del-color);
+  }
+
+  .save-bar-saved .save-bar-message {
+    color: var(--pico-ins-color);
+  }
+
+  .save-bar-saved .save-bar-actions {
+    visibility: hidden;
+  }
+
+  .save-bar-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .save-bar-actions button {
+    width: auto;
+    margin: 0;
+    padding: 0.4rem 1rem;
+  }
+
+  /* Leave room so the save bar never covers the end of the page */
+  :global(main.container) {
+    padding-bottom: 5rem;
+  }
+</style>

@@ -1,0 +1,89 @@
+---
+import SaveBar from '../settings/SaveBar.astro';
+import SourceSettingsForm from '../settings/SourceSettingsForm.astro';
+---
+
+<section role="tabpanel" data-panel="settings" hidden>
+  <article>
+    <form id="settingsForm"><SourceSettingsForm id="settingsFields" /></form>
+    <SaveBar id="settingsSaveBar" />
+  </article>
+  <article class="danger-zone">
+    <div>
+      <strong>Delete session</strong>
+      <p class="muted">Displays using this session stop receiving images. This can't be undone.</p>
+    </div>
+    <button id="deleteBtn" class="delete-btn outline">Delete session</button>
+  </article>
+</section>
+
+<script>
+  import { api, type SessionDetails } from '../../lib/adminApi';
+  import { $, withBusy } from '../../lib/dom';
+  import { on, sessionPath, setSession, state } from './sessionPage';
+  import { renderSessionSettingsForm, type SessionFormValue, type SourceSettingsForm } from '../settings/sourceSettingsForm';
+
+  const formEl = $<HTMLFormElement>('settingsForm');
+  let form: SourceSettingsForm<SessionFormValue> | null = null;
+  const saveBar = $('settingsSaveBar') as HTMLElementTagNameMap['save-bar'];
+  let ready = false;
+
+  function render() {
+    form = renderSessionSettingsForm($('settingsFields'), state.global!, state.session!);
+    if (ready) saveBar.reset();
+  }
+
+  async function save(): Promise<string | void> {
+    const value = form!.read();
+    if (typeof value === 'string') return value;
+    setSession(await api<SessionDetails>(sessionPath, { method: 'PATCH', body: value }));
+    render();
+  }
+
+  // Render once the session is loaded; afterwards only re-render on outside changes when
+  // nothing is being edited, so the admin's unsaved changes are never thrown away
+  on('session', async () => {
+    if (!form) {
+      render();
+      await customElements.whenDefined('save-bar');
+      saveBar.init({ watch: formEl, state: () => form!.state(), onSave: save, onDiscard: render });
+      ready = true;
+    }
+  });
+  on('settings', () => {
+    if (!ready || !saveBar.isDirty()) render();
+  });
+
+  formEl.addEventListener('submit', (e) => e.preventDefault());
+
+  $('deleteBtn').addEventListener('click', (e) => {
+    if (!confirm('Delete this session? Displays using it will stop receiving images.')) return;
+    withBusy(e.currentTarget as HTMLButtonElement, async () => {
+      await api(sessionPath, { method: 'DELETE' });
+      window.location.href = '/admin/';
+    });
+  });
+</script>
+
+<style>
+  .danger-zone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    border: 1px solid var(--pico-del-color);
+  }
+
+  .danger-zone p {
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
+  .delete-btn {
+    width: auto;
+    margin: 0;
+    color: var(--pico-del-color);
+    border-color: var(--pico-del-color);
+  }
+</style>

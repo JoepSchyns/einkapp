@@ -1,0 +1,171 @@
+---
+import CopyButton from '../CopyButton.astro';
+---
+
+<section role="tabpanel" data-panel="link" hidden>
+  <article>
+    <form id="linkBuilder" class="builder">
+      <div>
+        <label>
+          Display name
+          <input name="device" type="text" maxlength="64" placeholder="e.g. living-room" />
+          <small>Identifies the display on the Displays tab.</small>
+        </label>
+        <label>
+          Image
+          <select name="mode">
+            <option value="resize">Resized for the display</option>
+            <option value="original">Original size</option>
+          </select>
+        </label>
+        <div id="lbResizeFields">
+          <div class="grid">
+            <label>Width <input name="w" type="number" min="1" max="4096" value="1600" /></label>
+            <label>Height <input name="h" type="number" min="1" max="4096" value="1200" /></label>
+          </div>
+          <label>
+            Fit
+            <select name="fit">
+              <option value="cover">cover: fill the screen, crop the edges</option>
+              <option value="contain">contain: whole image, with borders</option>
+              <option value="fill">fill: stretch to the screen</option>
+              <option value="inside">inside: whole image, never larger than the screen</option>
+              <option value="outside">outside: cover the screen, keep the aspect ratio</option>
+            </select>
+          </label>
+          <label>
+            Brightness <output id="lbBrightnessValue">1.00</output>
+            <input name="brightness" type="range" min="0.5" max="2" step="0.05" value="1" />
+          </label>
+        </div>
+      </div>
+      <div class="builder-preview">
+        <div id="lbPreviewBox" class="preview-box">
+          <img id="lbPreviewImg" alt="Preview of the latest image" class="hidden" />
+          <small id="lbPreviewEmpty">The preview appears once a display has fetched an image.</small>
+        </div>
+        <small class="muted">Approximate preview of the latest image</small>
+      </div>
+    </form>
+    <label for="lbUrl">URL</label>
+    <div class="url-row">
+      <input id="lbUrl" type="text" readonly />
+      <CopyButton id="lbCopyBtn" />
+    </div>
+    <small class="muted">Opening this URL generates a new image for the session, just like a display does.</small>
+  </article>
+</section>
+
+<script>
+  import { $, copyWithFeedback } from '../../lib/dom';
+  import { on, sessionId, state, thumbnailUrl } from './sessionPage';
+
+  // CSS object-fit that looks like each sharp fit mode
+  const OBJECT_FIT: Record<string, string> = {
+    cover: 'cover',
+    contain: 'contain',
+    fill: 'fill',
+    inside: 'contain',
+    outside: 'cover',
+  };
+
+  const form = $<HTMLFormElement>('linkBuilder');
+
+  function update() {
+    const values = new FormData(form);
+    const resize = values.get('mode') === 'resize';
+    const w = Math.max(1, parseInt(String(values.get('w')), 10) || 1);
+    const h = Math.max(1, parseInt(String(values.get('h')), 10) || 1);
+    const fit = String(values.get('fit'));
+    const brightness = Number(values.get('brightness'));
+    const device = String(values.get('device')).trim();
+    $('lbResizeFields').classList.toggle('hidden', !resize);
+    $('lbBrightnessValue').textContent = brightness.toFixed(2);
+
+    const query = new URLSearchParams();
+    if (resize) {
+      query.set('w', String(w));
+      query.set('h', String(h));
+      query.set('fit', fit);
+      if (brightness !== 1) query.set('brightness', String(brightness));
+    }
+    if (device) query.set('device', device);
+    const path = `/api/session/${encodeURIComponent(sessionId)}/image${resize ? '/resize' : ''}`;
+    const qs = query.toString();
+    $<HTMLInputElement>('lbUrl').value = `${window.location.origin}${path}${qs ? `?${qs}` : ''}`;
+
+    // Approximate preview from the latest thumbnail, so building a link never generates an image
+    const latest = state.devices.find((d) => d.hasThumbnail);
+    const src = latest ? thumbnailUrl(latest) : null;
+    const img = $<HTMLImageElement>('lbPreviewImg');
+    $('lbPreviewBox').style.aspectRatio = resize ? `${w} / ${h}` : '';
+    img.style.objectFit = resize ? OBJECT_FIT[fit] : 'contain';
+    img.style.filter = resize ? `brightness(${brightness})` : '';
+    img.classList.toggle('hidden', !src);
+    $('lbPreviewEmpty').classList.toggle('hidden', Boolean(src));
+    if (src && img.getAttribute('src') !== src) img.src = src;
+  }
+
+  form.addEventListener('input', update);
+  form.addEventListener('submit', (e) => e.preventDefault());
+  $('lbCopyBtn').addEventListener('click', () => copyWithFeedback($('lbCopyBtn'), $<HTMLInputElement>('lbUrl').value));
+  on('devices', update);
+  update();
+</script>
+
+<style>
+  .builder {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: var(--pico-spacing);
+    align-items: start;
+  }
+
+  @media (max-width: 640px) {
+    .builder {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .builder-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    text-align: center;
+  }
+
+  .preview-box {
+    width: 100%;
+    max-height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    min-height: 100px;
+  }
+
+  .preview-box img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .preview-box small {
+    padding: 0.5rem;
+    color: var(--pico-muted-color);
+  }
+
+  .url-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .url-row input {
+    margin-bottom: 0;
+    font-family: var(--pico-font-family-monospace);
+    font-size: 0.85rem;
+  }
+</style>

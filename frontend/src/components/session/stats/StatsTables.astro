@@ -1,0 +1,126 @@
+---
+---
+
+<div class="table-grid">
+  <article>
+    <header><strong>Sources</strong></header>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th class="num">Images</th>
+            <th class="num">Failed</th>
+            <th class="num">Success</th>
+            <th class="num" title="Average time to fetch an image">Avg</th>
+          </tr>
+        </thead>
+        <tbody id="statsSourceTable"></tbody>
+      </table>
+    </div>
+  </article>
+  <article>
+    <header><strong>Displays</strong></header>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr><th>Display</th><th class="num">Images</th><th>Last image</th></tr>
+        </thead>
+        <tbody id="statsDeviceTable"></tbody>
+      </table>
+    </div>
+  </article>
+</div>
+
+<script>
+  import { formatRelative } from '../../../lib/adminApi';
+  import { $ } from '../../../lib/dom';
+  import { formatMs, onStats, sourceName, swatch, type Stats } from './stats';
+
+  function cell(text: string, className = '') {
+    return Object.assign(document.createElement('td'), { textContent: text, className });
+  }
+
+  function row(...cells: HTMLTableCellElement[]) {
+    const tr = document.createElement('tr');
+    tr.append(...cells);
+    return tr;
+  }
+
+  function emptyRow(colSpan: number) {
+    const td = cell('No data in this period.', 'muted');
+    td.colSpan = colSpan;
+    return row(td);
+  }
+
+  function render(stats: Stats) {
+    const sourceRows = stats.perSource.map((s) => {
+      const name = cell('', 'source-cell');
+      name.append(swatch(s.name), sourceName(s.name));
+      if (s.lastError) name.title = `Last error: ${s.lastError}`;
+      const failed = s.total - s.succeeded;
+      return row(
+        name,
+        cell(s.succeeded.toLocaleString(), 'num'),
+        cell(failed.toLocaleString(), failed ? 'num failed' : 'num'),
+        cell(s.total ? `${Math.round((s.succeeded / s.total) * 100)}%` : '—', 'num'),
+        cell(formatMs(s.avgDurationMs), 'num')
+      );
+    });
+    $('statsSourceTable').replaceChildren(...(sourceRows.length ? sourceRows : [emptyRow(5)]));
+
+    const deviceRows = stats.perDevice.map((d) =>
+      row(cell(d.label), cell(d.count.toLocaleString(), 'num'), cell(formatRelative(d.lastAt)))
+    );
+    $('statsDeviceTable').replaceChildren(...(deviceRows.length ? deviceRows : [emptyRow(3)]));
+  }
+
+  onStats(render);
+</script>
+
+<style>
+  .table-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 0 var(--pico-spacing);
+  }
+
+  .table-grid > article {
+    min-width: 0;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+  }
+
+  table {
+    margin-bottom: 0;
+    font-size: 0.9rem;
+  }
+
+  table th,
+  table :global(td) {
+    background-color: inherit;
+    padding: 0.5rem 0.4rem;
+    font-size: 0.875rem;
+  }
+
+  .num,
+  table :global(.num) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table :global(td.num) {
+    white-space: nowrap;
+  }
+
+  table :global(td.failed) {
+    color: var(--pico-del-color);
+  }
+
+  table :global(.source-cell) {
+    padding-left: 1.6rem;
+    text-indent: -1.2rem;
+  }
+</style>

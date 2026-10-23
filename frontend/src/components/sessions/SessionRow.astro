@@ -1,14 +1,16 @@
 ---
-import CopyButton from './CopyButton.astro';
+import CopyButton from '../CopyButton.astro';
 ---
 
 <template id="sessionRowTemplate">
   <tr class="session-row">
     <td class="id-cell">
+      <strong data-field="name" class="session-name"></strong>
       <code data-field="id"></code>
       <CopyButton dataField="copyBtn" />
     </td>
-    <td data-field="date"></td>
+    <td data-field="date" class="col-accessed"></td>
+    <td data-field="expires"></td>
     <td class="actions-cell">
       <a data-field="viewLink" class="arrow-link" aria-label="View session">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -35,6 +37,20 @@ import CopyButton from './CopyButton.astro';
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+  }
+
+  .session-name {
+    display: block;
+  }
+
+  .session-name:empty {
+    display: none;
+  }
+
+  @media (max-width: 576px) {
+    .col-accessed {
+      display: none;
     }
   }
 

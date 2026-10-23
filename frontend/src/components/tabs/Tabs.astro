@@ -1,0 +1,109 @@
+---
+/**
+ * Tab bar for <section role="tabpanel" data-panel="id"> elements on the same page. The active tab
+ * is kept in the URL hash (#stats), so tabs can be linked to and work with back/forward.
+ * - listen to `tab:show` on document (detail: tab id) to react to a tab being opened
+ * - dispatch `tab:count` on document (detail: { tab, count }) to set a tab's badge
+ */
+interface Props {
+  label: string;
+  tabs: { id: string; label: string; count?: boolean }[];
+}
+
+const { label, tabs } = Astro.props;
+---
+
+<div class="tabs" role="tablist" aria-label={label}>
+  {
+    tabs.map((tab) => (
+      <button role="tab" data-tab={tab.id}>
+        {tab.label}
+        {tab.count && <span class="tab-count" data-count-for={tab.id} />}
+      </button>
+    ))
+  }
+</div>
+
+<script>
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  const tabs = buttons.map((btn) => btn.dataset.tab!);
+
+  function show(tab: string) {
+    const active = tabs.includes(tab) ? tab : tabs[0];
+    for (const btn of buttons) {
+      const selected = btn.dataset.tab === active;
+      btn.setAttribute('aria-selected', String(selected));
+      if (selected) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    document.querySelectorAll<HTMLElement>('[role="tabpanel"]').forEach((panel) => {
+      panel.hidden = panel.dataset.panel !== active;
+    });
+    history.replaceState(null, '', active === tabs[0] ? window.location.search : `#${active}`);
+    document.dispatchEvent(new CustomEvent('tab:show', { detail: active }));
+  }
+
+  buttons.forEach((btn) => btn.addEventListener('click', () => show(btn.dataset.tab!)));
+  window.addEventListener('hashchange', () => show(window.location.hash.slice(1)));
+
+  document.addEventListener('tab:count', (e) => {
+    const { tab, count } = (e as CustomEvent<{ tab: string; count: number }>).detail;
+    const badge = document.querySelector(`[data-count-for="${tab}"]`);
+    if (badge) badge.textContent = count ? String(count) : '';
+  });
+
+  // Wait until every component's script has run, so they all receive the first tab:show
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => show(window.location.hash.slice(1)));
+  } else {
+    setTimeout(() => show(window.location.hash.slice(1)));
+  }
+</script>
+
+<style>
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    margin-bottom: var(--pico-spacing);
+    scrollbar-width: none;
+  }
+
+  [role='tab'] {
+    flex-shrink: 0;
+    width: auto;
+    margin: 0 0 -1px;
+    padding: 0.5rem 0.9rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--pico-muted-color);
+    font-size: 0.95rem;
+    box-shadow: none;
+  }
+
+  [role='tab']:hover {
+    color: var(--pico-color);
+  }
+
+  [role='tab'][aria-selected='true'] {
+    color: var(--pico-primary);
+    border-bottom-color: var(--pico-primary);
+  }
+
+  .tab-count {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 0.35em;
+    border-radius: 1em;
+    background: var(--pico-muted-border-color);
+    color: var(--pico-color);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .tab-count:empty {
+    display: none;
+  }
+</style>

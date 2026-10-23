@@ -1,0 +1,124 @@
+---
+import LiveDot from '../LiveDot.astro';
+import TabIntro from '../tabs/TabIntro.astro';
+---
+
+<section role="tabpanel" data-panel="displays" hidden>
+  <TabIntro>
+    <LiveDot />
+    What each display is showing right now. Updates automatically when a display fetches a new image.
+  </TabIntro>
+  <div id="deviceList" class="device-grid"></div>
+</section>
+
+<template id="deviceTemplate">
+  <article class="device-card">
+    <img data-field="thumb" alt="" loading="lazy" />
+    <div class="device-meta">
+      <strong data-field="label"></strong>
+      <small data-field="seen"></small>
+      <small data-field="size"></small>
+      <a data-field="title" target="_blank" rel="noopener"></a>
+      <small data-field="source"></small>
+      <button data-field="forgetBtn" class="small-btn secondary outline">Forget</button>
+    </div>
+  </article>
+</template>
+
+<script>
+  import { api, formatRelative, sourceLabel, type SessionDevice } from '../../lib/adminApi';
+  import { $, cloneTemplate, setMuted } from '../../lib/dom';
+  import { loadDevices, on, sessionPath, state, thumbnailUrl } from './sessionPage';
+
+  function renderDevice(device: SessionDevice) {
+    const { frag, field } = cloneTemplate('deviceTemplate');
+    const thumb = field<HTMLImageElement>('thumb');
+    if (device.hasThumbnail) {
+      thumb.src = thumbnailUrl(device);
+      thumb.alt = device.title ?? `Image on ${device.label}`;
+    } else {
+      thumb.remove();
+    }
+    field('label').textContent = device.label;
+    field('seen').textContent = `Last image ${formatRelative(device.lastSeenAt)}`;
+    field('seen').title = new Date(device.lastSeenAt).toLocaleString();
+    field('size').textContent = device.resize
+      ? `${device.resize.w}×${device.resize.h}, ${device.resize.fit}, brightness ${device.resize.brightness}`
+      : 'Original size';
+    const title = field<HTMLAnchorElement>('title');
+    title.textContent = device.title || 'Source';
+    if (device.sourceUrl) title.href = device.sourceUrl;
+    field('source').textContent = sourceLabel(state.global!.sources, device.generatorName);
+
+    const forgetBtn = field<HTMLButtonElement>('forgetBtn');
+    forgetBtn.addEventListener('click', async () => {
+      forgetBtn.disabled = true;
+      try {
+        await api(`${sessionPath}/device/${encodeURIComponent(device.key)}`, { method: 'DELETE' });
+        await loadDevices();
+      } catch {
+        forgetBtn.disabled = false;
+      }
+    });
+    return frag;
+  }
+
+  function render() {
+    const list = $('deviceList');
+    document.dispatchEvent(new CustomEvent('tab:count', { detail: { tab: 'displays', count: state.devices.length } }));
+    list.replaceChildren(...state.devices.map(renderDevice));
+    if (state.devices.length === 0) {
+      const empty = document.createElement('p');
+      setMuted(empty, 'No display has fetched an image yet. Use the Link builder tab to create a URL for a display.');
+      list.append(empty);
+    }
+  }
+
+  on('devices', render);
+  on('tick', render);
+</script>
+
+<style>
+  .device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: var(--pico-spacing);
+  }
+
+  .device-card {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    margin: 0;
+  }
+
+  .device-card img {
+    width: 125px;
+    max-height: 125px;
+    object-fit: contain;
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-muted-border-color);
+    flex-shrink: 0;
+  }
+
+  .device-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    font-size: 0.9rem;
+  }
+
+  .device-meta small {
+    color: var(--pico-muted-color);
+  }
+
+  .device-meta a {
+    overflow-wrap: anywhere;
+  }
+
+  .device-meta button {
+    align-self: flex-start;
+    margin-top: 0.35rem;
+  }
+</style>

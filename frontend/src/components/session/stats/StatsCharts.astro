@@ -1,0 +1,160 @@
+---
+---
+
+<div class="chart-grid">
+  <article>
+    <header><strong>Images per source</strong></header>
+    <div class="chart-box"><canvas id="sourceChart" aria-label="Images per source"></canvas></div>
+  </article>
+  <article>
+    <header><strong>Time of day</strong></header>
+    <div class="chart-box"><canvas id="hourChart" aria-label="Images per hour of the day"></canvas></div>
+  </article>
+</div>
+
+<article>
+  <header><strong>Images per day</strong></header>
+  <div class="chart-box chart-box-wide"><canvas id="dailyChart" aria-label="Images per day by source"></canvas></div>
+</article>
+
+<script>
+  import { BarController, BarElement, CategoryScale, Chart, Legend, LinearScale, Tooltip } from 'chart.js';
+  import { $ } from '../../../lib/dom';
+  import {
+    bySettingsOrder,
+    darkQuery,
+    days,
+    onStats,
+    PALETTE_DARK,
+    PALETTE_LIGHT,
+    sourceColor,
+    sourceName,
+    type Stats,
+  } from './stats';
+
+  Chart.register(BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip);
+
+  let charts: Chart[] = [];
+
+  /** Date keys (YYYY-MM-DD, local time) of the shown period, oldest first */
+  function lastDays(count: number): string[] {
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (count - 1 - i));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+  }
+
+  function render(stats: Stats) {
+    charts.forEach((c) => c.destroy());
+    const styles = getComputedStyle(document.body);
+    const grid = styles.getPropertyValue('--pico-muted-border-color').trim() || '#ddd';
+    const surface = styles.getPropertyValue('--pico-card-background-color').trim() || '#fff';
+    Chart.defaults.color = styles.getPropertyValue('--pico-muted-color').trim() || '#666';
+    Chart.defaults.font.family = styles.fontFamily;
+    const axis = { grid: { color: grid, drawTicks: false }, border: { display: false }, ticks: { padding: 6 } };
+    const valueAxis = { ...axis, beginAtZero: true, ticks: { ...axis.ticks, precision: 0 } };
+    const categoryAxis = { ...axis, grid: { display: false } };
+
+    // Images per source, most shown first
+    const bySource = [...stats.perSource].sort((a, b) => b.succeeded - a.succeeded);
+    const sourceChart = new Chart($<HTMLCanvasElement>('sourceChart'), {
+      type: 'bar',
+      data: {
+        labels: bySource.map((s) => sourceName(s.name)),
+        datasets: [{
+          label: 'Images',
+          data: bySource.map((s) => s.succeeded),
+          backgroundColor: bySource.map((s) => sourceColor(s.name)),
+          borderRadius: 4,
+          borderSkipped: 'start',
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: valueAxis, y: categoryAxis },
+      },
+    });
+
+    // Images per hour of the day (single series)
+    const hourChart = new Chart($<HTMLCanvasElement>('hourChart'), {
+      type: 'bar',
+      data: {
+        labels: stats.hourly.map((h) => String(h.hour).padStart(2, '0')),
+        datasets: [{
+          label: 'Images',
+          data: stats.hourly.map((h) => h.count),
+          backgroundColor: darkQuery.matches ? PALETTE_DARK[0] : PALETTE_LIGHT[0],
+          borderRadius: 4,
+          borderSkipped: 'start',
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: (items) => `${items[0].label}:00–${items[0].label}:59` } },
+        },
+        scales: { x: { ...categoryAxis, ticks: { ...axis.ticks, maxRotation: 0 } }, y: valueAxis },
+      },
+    });
+
+    // Images per day, stacked by source
+    const dayKeys = lastDays(days);
+    const names = [...new Set(stats.daily.map((d) => d.name))].sort(bySettingsOrder);
+    const dailyChart = new Chart($<HTMLCanvasElement>('dailyChart'), {
+      type: 'bar',
+      data: {
+        labels: dayKeys.map((d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+        datasets: names.map((name) => ({
+          label: sourceName(name),
+          data: dayKeys.map((day) => stats.daily.find((d) => d.day === day && d.name === name)?.count ?? 0),
+          backgroundColor: sourceColor(name),
+          borderColor: surface,
+          borderWidth: { top: 2 },
+          borderSkipped: 'start',
+        })),
+      },
+      options: {
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 2 } },
+          tooltip: { filter: (item) => (item.parsed.y ?? 0) > 0 },
+        },
+        scales: {
+          x: { ...categoryAxis, stacked: true, ticks: { ...axis.ticks, autoSkip: true, maxRotation: 0 } },
+          y: { ...valueAxis, stacked: true },
+        },
+      },
+    });
+
+    charts = [sourceChart, hourChart, dailyChart];
+  }
+
+  onStats(render);
+</script>
+
+<style>
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+    gap: 0 var(--pico-spacing);
+  }
+
+  .chart-grid > article {
+    min-width: 0;
+  }
+
+  .chart-box {
+    position: relative;
+    height: 240px;
+  }
+
+  .chart-box-wide {
+    height: 280px;
+  }
+</style>

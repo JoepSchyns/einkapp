@@ -9,6 +9,7 @@ services:
       - REDDIT_CLIENT_ID
       - REDDIT_CLIENT_SECRET
       - UNSPLASH_ACCESS_KEY
+      - EUROPEANA_API_KEY
       # Admin
       - ADMIN_USERNAME
       - ADMIN_PASSWORD

@@ -1,0 +1,187 @@
+---
+/**
+ * Container for the global/session settings form. The fields are rendered by
+ * sourceSettingsForm.ts, so the styles are global (rendered elements don't get Astro's scoping).
+ */
+interface Props {
+  id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<div id={id} class="ssf"></div>
+
+<style is:global>
+  /* Shared settings form (rendered by sourceSettingsForm.ts) */
+  .ssf-section + .ssf-section {
+    margin-top: calc(var(--pico-spacing) * 1.5);
+  }
+
+  .ssf h3 {
+    font-size: 1.05rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .ssf-help,
+  .ssf small {
+    color: var(--pico-muted-color);
+  }
+
+  .ssf-help {
+    font-size: 0.875rem;
+  }
+
+  /* One compact row per source: name, share, weight, parameters button */
+  .ssf-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3.5rem 6rem 8.5rem;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    padding: 0.45rem 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+  }
+
+  .ssf-row[hidden] {
+    display: none;
+  }
+
+  .ssf-row-head {
+    border-top: none;
+    padding-bottom: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--pico-muted-color);
+  }
+
+  .ssf-name {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .ssf-name > span {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .ssf-note:empty {
+    display: none;
+  }
+
+  .ssf-col-share {
+    text-align: right;
+    font-size: 0.875rem;
+    color: var(--pico-muted-color);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ssf-row input.ssf-col-weight {
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    height: auto;
+    font-size: 0.9rem;
+  }
+
+  .ssf-params-btn {
+    width: 100%;
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .ssf-params-btn.ssf-params-changed {
+    border-color: var(--pico-primary);
+    color: var(--pico-primary);
+  }
+
+  .ssf-off .ssf-name strong,
+  .ssf-off .ssf-col-weight {
+    opacity: 0.55;
+  }
+
+  .ssf-panel {
+    padding: 0.75rem 1rem 0.25rem;
+    margin-bottom: 0.5rem;
+    border-left: 3px solid var(--pico-primary);
+    background: var(--pico-code-background-color);
+    border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0;
+  }
+
+  .ssf-param-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 0 var(--pico-spacing);
+  }
+
+  .ssf-param-fields label {
+    margin-bottom: 0.5rem;
+  }
+
+  .ssf-param-fields input,
+  .ssf-param-fields select {
+    margin-bottom: 0.25rem;
+  }
+
+  /* Pico pulls help text up under an input; undo that since the inputs here have less margin */
+  .ssf-param-fields input + small,
+  .ssf-param-fields select + small {
+    display: block;
+    margin-top: 0;
+  }
+
+  /* Multiple choice parameters span the whole panel, their options in columns */
+  .ssf-param-fields fieldset {
+    grid-column: 1 / -1;
+    margin-bottom: 0.5rem;
+  }
+
+  .ssf-multi {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    gap: 0.25rem var(--pico-spacing);
+    max-height: 14rem;
+    overflow-y: auto;
+    margin-bottom: 0.25rem;
+  }
+
+  .ssf-multi label {
+    margin: 0;
+  }
+  .ssf-filter {
+    margin-bottom: 0.5rem;
+  }
+
+  .ssf-unconfigured {
+    margin: 1rem 0 0;
+  }
+
+  .ssf-unconfigured summary {
+    color: var(--pico-muted-color);
+  }
+
+  /* The "New session" dialog only shows the switches */
+  .ssf-mode-create .ssf-row {
+    grid-template-columns: minmax(0, 1fr) 3.5rem;
+  }
+
+  @media (max-width: 576px) {
+    .ssf-row-head {
+      display: none;
+    }
+
+    .ssf-row {
+      grid-template-columns: minmax(0, 1fr) 3rem 4.5rem;
+    }
+
+    .ssf-row .ssf-params-btn {
+      grid-column: 1 / -1;
+      justify-self: start;
+      width: auto;
+      margin-left: 2.5rem;
+    }
+  }
+</style>

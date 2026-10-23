@@ -1,0 +1,47 @@
+---
+import CreateSessionDialog from './CreateSessionDialog.astro';
+import LiveDot from '../LiveDot.astro';
+---
+
+<div class="session-toolbar">
+  <div class="session-toolbar-info">
+    <h2>Sessions <span id="sessionCount"></span></h2>
+    <small class="live" title="This list updates automatically"><LiveDot />Live</small>
+  </div>
+  <CreateSessionDialog />
+</div>
+
+<style>
+  .session-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin-bottom: var(--pico-spacing);
+  }
+
+  .session-toolbar-info {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 0.75rem;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  #sessionCount {
+    color: var(--pico-muted-color);
+    font-weight: 400;
+    font-size: 1rem;
+  }
+
+  .live {
+    color: var(--pico-muted-color);
+    font-size: 0.8rem;
+  }
+
+</style>

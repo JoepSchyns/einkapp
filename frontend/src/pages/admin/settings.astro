@@ -1,0 +1,95 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import AdminNav from '../../components/AdminNav.astro';
+import SaveBar from '../../components/settings/SaveBar.astro';
+import SourceSettingsForm from '../../components/settings/SourceSettingsForm.astro';
+---
+
+<Layout title="Settings">
+  <AdminNav current="settings" />
+
+  <div class="page">
+    <h2>Settings</h2>
+    <p class="intro">Defaults for all sessions. Each session can override these on its own Settings tab.</p>
+
+    <div id="loading">Loading…</div>
+
+    <div id="unauthorized" class="hidden">
+      <p>You are not authenticated.</p>
+      <a href="/admin/">Log in</a>
+    </div>
+
+    <article id="settingsCard" class="hidden">
+      <form id="settingsForm"><SourceSettingsForm id="settingsFields" /></form>
+    </article>
+  </div>
+  <SaveBar id="settingsSaveBar" />
+</Layout>
+
+<script>
+  import { api, ApiError, type GlobalSettings } from '../../lib/adminApi';
+  import { renderGlobalSettingsForm, type GlobalFormValue, type SourceSettingsForm } from '../../components/settings/sourceSettingsForm';
+  import { subscribeAdminEvents } from '../../lib/adminEvents';
+  import { $ } from '../../lib/dom';
+
+  const formEl = $<HTMLFormElement>('settingsForm');
+  let settings: GlobalSettings;
+  let form: SourceSettingsForm<GlobalFormValue>;
+  const saveBar = $('settingsSaveBar') as HTMLElementTagNameMap['save-bar'];
+  let ready = false;
+
+  function render() {
+    form = renderGlobalSettingsForm($('settingsFields'), settings);
+    if (ready) saveBar.reset();
+  }
+
+  async function save(): Promise<string | void> {
+    const value = form.read();
+    if (typeof value === 'string') return value;
+    settings = await api<GlobalSettings>('/settings', { method: 'PUT', body: value });
+    render();
+  }
+
+  formEl.addEventListener('submit', (e) => e.preventDefault());
+
+  async function init() {
+    try {
+      settings = await api<GlobalSettings>('/settings');
+    } catch (err) {
+      $('loading').classList.add('hidden');
+      if (err instanceof ApiError && err.status === 401) $('unauthorized').classList.remove('hidden');
+      else $('loading').textContent = `Could not load settings: ${(err as Error).message}`;
+      return;
+    }
+    render();
+    await customElements.whenDefined('save-bar');
+    saveBar.init({ watch: formEl, state: () => form.state(), onSave: save, onDiscard: render });
+    ready = true;
+    $('loading').classList.add('hidden');
+    $('settingsCard').classList.remove('hidden');
+
+    // Pick up changes saved from another tab, unless this one has unsaved changes
+    subscribeAdminEvents(async (event) => {
+      if (event.type !== 'settings' || saveBar.isDirty()) return;
+      settings = await api<GlobalSettings>('/settings');
+      render();
+    });
+  }
+
+  init();
+</script>
+
+<style>
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  h2 {
+    margin-bottom: 0.25rem;
+  }
+
+  .intro {
+    color: var(--pico-muted-color);
+  }
+</style>

@@ -1,0 +1,75 @@
+---
+import SourceSettingsForm from '../settings/SourceSettingsForm.astro';
+---
+
+<button id="createSessionBtn">New session</button>
+
+<dialog id="createDialog">
+  <article>
+    <header>
+      <button type="button" aria-label="Close" rel="prev" data-close></button>
+      <h3>New session</h3>
+    </header>
+    <form id="createForm">
+      <SourceSettingsForm id="createFormFields" />
+      <p id="createError" class="form-error" role="alert"></p>
+    </form>
+    <footer>
+      <button type="button" class="secondary" data-close>Cancel</button>
+      <button type="submit" form="createForm" id="createSubmit">Create</button>
+    </footer>
+  </article>
+</dialog>
+
+<script>
+  import { api, type GlobalSettings } from '../../lib/adminApi';
+  import { $, withBusy } from '../../lib/dom';
+  import { renderSessionSettingsForm, type SessionFormValue, type SourceSettingsForm } from '../settings/sourceSettingsForm';
+
+  const dialog = $<HTMLDialogElement>('createDialog');
+  const error = $('createError');
+  let form: SourceSettingsForm<SessionFormValue> | null = null;
+
+  // The form is rendered when opening, so it reflects the current global settings
+  $('createSessionBtn').addEventListener('click', (e) =>
+    withBusy(e.currentTarget as HTMLButtonElement, async () => {
+      const settings = await api<GlobalSettings>('/settings');
+      form = renderSessionSettingsForm($('createFormFields'), settings, null, 'create');
+      error.textContent = '';
+      dialog.showModal();
+    })
+  );
+
+  dialog.querySelectorAll('[data-close]').forEach((btn) => btn.addEventListener('click', () => dialog.close()));
+
+  $('createForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const options = form?.read();
+    if (!options || typeof options === 'string') {
+      error.textContent = options ?? '';
+      return;
+    }
+    withBusy($<HTMLButtonElement>('createSubmit'), async () => {
+      try {
+        const { id } = await api<{ id: string }>('/session', { method: 'POST', body: options });
+        window.location.href = `/admin/session?id=${encodeURIComponent(id)}`;
+      } catch (err) {
+        error.textContent = (err as Error).message;
+      }
+    });
+  });
+</script>
+
+<style>
+  #createSessionBtn {
+    width: auto;
+    margin: 0;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+  }
+
+  footer button {
+    width: auto;
+    margin-bottom: 0;
+  }
+</style>

@@ -1,0 +1,99 @@
+---
+---
+
+<div class="tiles" id="statsTiles"></div>
+
+<script>
+  import { $ } from '../../../lib/dom';
+  import { days, formatMs, onStats, sourceName, type Stats } from './stats';
+
+  function tile(value: string, label: string, detail = '') {
+    const el = Object.assign(document.createElement('article'), { className: 'tile' });
+    el.append(
+      Object.assign(document.createElement('div'), { className: 'tile-value', textContent: value }),
+      Object.assign(document.createElement('div'), { className: 'tile-label', textContent: label })
+    );
+    if (detail) el.append(Object.assign(document.createElement('small'), { className: 'muted', textContent: detail }));
+    return el;
+  }
+
+  /** Headline numbers plus a few facts that only show up when there is something to say */
+  function render(stats: Stats) {
+    const { totals, perSource, hourly } = stats;
+    const tiles: HTMLElement[] = [
+      tile(totals.succeeded.toLocaleString(), `Images in ${days} days`, `${stats.allTimeImages.toLocaleString()} in total`),
+      tile(
+        totals.total ? `${Math.round((totals.succeeded / totals.total) * 100)}%` : '—',
+        'Success rate',
+        totals.failed ? `${totals.failed} failed attempts` : 'No failures'
+      ),
+      tile(String(totals.devices), 'Displays', 'that fetched images'),
+    ];
+
+    const favourite = [...perSource].sort((a, b) => b.succeeded - a.succeeded)[0];
+    if (favourite?.succeeded) {
+      const share = Math.round((favourite.succeeded / totals.succeeded) * 100);
+      tiles.push(tile(sourceName(favourite.name), 'Most shown source', `${share}% of images`));
+    }
+
+    const busiest = [...hourly].sort((a, b) => b.count - a.count)[0];
+    if (busiest?.count) {
+      const pad = (h: number) => String(h).padStart(2, '0');
+      tiles.push(tile(`${pad(busiest.hour)}:00–${pad((busiest.hour + 1) % 24)}:00`, 'Busiest hour', `${busiest.count} images`));
+    }
+
+    const timed = perSource.filter((s) => s.avgDurationMs !== null);
+    const fastest = [...timed].sort((a, b) => a.avgDurationMs! - b.avgDurationMs!)[0];
+    if (fastest && timed.length > 1) {
+      tiles.push(tile(sourceName(fastest.name), 'Fastest source', `${formatMs(fastest.avgDurationMs)} on average`));
+    }
+
+    const flaky = perSource
+      .filter((s) => s.total - s.succeeded > 0)
+      .sort((a, b) => a.succeeded / a.total - b.succeeded / b.total)[0];
+    if (flaky) {
+      const t = tile(sourceName(flaky.name), 'Least reliable source', `${flaky.total - flaky.succeeded} of ${flaky.total} attempts failed`);
+      if (flaky.lastError) t.title = `Last error: ${flaky.lastError}`;
+      tiles.push(t);
+    }
+
+    if (stats.createdAt) {
+      const ageDays = Math.floor((Date.now() - new Date(stats.createdAt).getTime()) / 86_400_000);
+      tiles.push(
+        tile(ageDays === 0 ? 'Today' : `${ageDays} day${ageDays === 1 ? '' : 's'}`, 'Session age',
+          `since ${new Date(stats.createdAt).toLocaleDateString()}`)
+      );
+    }
+    $('statsTiles').replaceChildren(...tiles);
+  }
+
+  onStats(render);
+</script>
+
+<style>
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: var(--pico-spacing);
+    margin-bottom: var(--pico-spacing);
+  }
+
+  .tiles :global(.tile) {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .tiles :global(.tile-value) {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  .tiles :global(.tile-label) {
+    font-size: 0.85rem;
+  }
+</style>

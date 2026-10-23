@@ -1,0 +1,77 @@
+---
+---
+
+<article id="statsProblems" class="problems hidden">
+  <header>
+    <strong>Problems</strong>
+    <small class="muted">— failed attempts in this period. The next source was tried automatically each time.</small>
+  </header>
+  <ul id="statsProblemList" class="problem-list"></ul>
+</article>
+
+<script>
+  import { formatRelative } from '../../../lib/adminApi';
+  import { $ } from '../../../lib/dom';
+  import { onStats, sourceName, swatch, type Stats } from './stats';
+
+  /** Failures grouped by source and message, so it's clear what goes wrong and how often */
+  function render(stats: Stats) {
+    $('statsProblems').classList.toggle('hidden', stats.problems.length === 0);
+    const items = stats.problems.map((p) => {
+      const head = Object.assign(document.createElement('div'), { className: 'problem-head' });
+      const when = Object.assign(document.createElement('small'), {
+        className: 'muted',
+        textContent:
+          p.count === 1
+            ? `once, ${formatRelative(p.lastAt)}`
+            : `${p.count}×, last ${formatRelative(p.lastAt)}, first ${formatRelative(p.firstAt)}`,
+        title: `Last: ${new Date(p.lastAt).toLocaleString()}`,
+      });
+      head.append(swatch(p.name), Object.assign(document.createElement('strong'), { textContent: sourceName(p.name) }), when);
+      const li = document.createElement('li');
+      li.append(head, Object.assign(document.createElement('code'), { className: 'problem-message', textContent: p.error }));
+      return li;
+    });
+    $('statsProblemList').replaceChildren(...items);
+  }
+
+  onStats(render);
+</script>
+
+<style>
+  .problems header small {
+    font-size: 0.8rem;
+  }
+
+  .problem-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .problem-list :global(li) {
+    list-style: none;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+
+  .problem-list :global(li:last-child) {
+    border-bottom: none;
+  }
+
+  .problem-list :global(.problem-head) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .problem-list :global(.problem-message) {
+    display: block;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>

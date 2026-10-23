@@ -1,10 +1,11 @@
-import type { ContentInfo, JsonObject } from '../types/index.js';
-import { ImageGenerator } from './ImageGenerator.js';
+import type { ContentInfo, JsonObject } from '../../types/index.js';
+import { ImageGenerator } from '../ImageGenerator.js';
 
 interface RedditPost extends JsonObject {
   data: {
     id: string;
     title: string;
+    subreddit: string;
     permalink: string;
     preview: {
       images: {
@@ -21,8 +22,55 @@ interface RedditPost extends JsonObject {
 interface RedditData extends JsonObject {
   previousPostIds: RedditPost['data']['id'][];
 }
-export abstract class RedditGenerator extends ImageGenerator<RedditData> {
-  abstract subreddit: string;
+export default class RedditGenerator extends ImageGenerator<RedditData> {
+  static label = 'Reddit';
+  static requiredEnv = ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET'];
+  static params = [
+    {
+      key: 'subreddits',
+      label: 'Subreddits',
+      default: 'art, photographs',
+      description: 'Comma separated, e.g. art, photographs',
+    },
+    {
+      key: 'sort',
+      label: 'Sort',
+      default: 'hot',
+      options: [
+        { value: 'hot', label: 'Hot' },
+        { value: 'new', label: 'New' },
+        { value: 'rising', label: 'Rising' },
+        { value: 'top-hour', label: 'Top of the hour' },
+        { value: 'top-day', label: 'Top of the day' },
+        { value: 'top-week', label: 'Top of the week' },
+        { value: 'top-month', label: 'Top of the month' },
+        { value: 'top-year', label: 'Top of the year' },
+        { value: 'top-all', label: 'Top of all time' },
+      ],
+    },
+  ];
+
+  /** Subreddits combined into a multireddit path, e.g. `art+photographs` */
+  get subreddit(): string {
+    return this.param('subreddits')
+      .split(',')
+      .map((name) => name.trim().replace(/^\/?r\//, ''))
+      .filter(Boolean)
+      .join('+');
+  }
+
+  /** Listing path and query for the configured sort, e.g. `top` + `t=week` */
+  get sort(): { listing: string; query: string } {
+    const value = this.param('sort').toLowerCase();
+    const [listing, period] = value.split('-');
+    if (['hot', 'new', 'rising'].includes(listing) && !period) {
+      return { listing, query: '' };
+    }
+    if (listing === 'top' && ['hour', 'day', 'week', 'month', 'year', 'all', undefined].includes(period)) {
+      return { listing, query: `&t=${period ?? 'day'}` };
+    }
+    throw new Error(`Unknown Reddit sort "${value}"`);
+  }
 
   async redditAuthFetch(after?: string): Promise<Response> {
     const client_id = process.env.REDDIT_CLIENT_ID;
@@ -41,7 +89,9 @@ export abstract class RedditGenerator extends ImageGenerator<RedditData> {
 
     const { access_token } = await tokenResponse.json() as { access_token: string };
 
-    return fetch(`https://oauth.reddit.com/r/${this.subreddit}.json?after=${after ?? ''}`, {
+    const subreddits = this.subreddit.split('+').map(encodeURIComponent).join('+');
+    const { listing, query } = this.sort;
+    return fetch(`https://oauth.reddit.com/r/${subreddits}/${listing}.json?after=${after ?? ''}${query}`, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
   }
@@ -94,26 +144,18 @@ export abstract class RedditGenerator extends ImageGenerator<RedditData> {
     const [firstPost] = newImages;
     const imageUrl = firstPost.data.preview.images[0].source.url.replace(/&amp;/g, '&');
 
-    const response = await fetch(imageUrl);
-    const stream = response.body;
-    if (!stream) {
-      throw new Error('Could not get image stream from Reddit.');
-    }
-    const contentType = response.headers.get('Content-Type');
-    if (!contentType) {
-      throw new Error('Could not determine content type of the image.');
-    }
+    const content = await this.downloadImage(imageUrl);
     this.store.setInfo({
       title: firstPost.data.title,
       sourceUrl: `https://reddit.com${firstPost.data.permalink}`,
-      description: `Image post from subreddit r/${this.subreddit}`,
+      description: `Image post from subreddit r/${firstPost.data.subreddit}`,
     });
     const newData = { previousPostIds: [...(prevData?.previousPostIds ?? []), firstPost.data.id] };
     // Keep only the last 1000 post IDs to prevent unbounded growth
     newData.previousPostIds = newData.previousPostIds.slice(-1000);
 
     this.store.setPrevData(newData);
-    return { stream, contentType };
+    return content;
   }
   getInfo(): Promise<ContentInfo> {
     return Promise.resolve(this.store.getInfo());

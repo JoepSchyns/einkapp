@@ -1,4 +1,5 @@
 import { Store } from '../Store.js';
+import { parseSessionSettings, type SessionSettings } from '../types/index.js';
 
 export class SessionStore extends Store {
   constructor(private sessionId: string) {
@@ -29,4 +30,12 @@ export class SessionStore extends Store {
       )
       .run(this.sessionId, ...activeGeneratorNames);
   }
+
+  getSettings(): SessionSettings {
+    const row = Store.db.prepare(`SELECT settings FROM sessions WHERE id = ?`).get(this.sessionId) as
+      | { settings: string | null }
+      | undefined;
+    return parseSessionSettings(row?.settings ?? null);
+  }
+
 }

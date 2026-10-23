@@ -2,9 +2,23 @@ import { randomBytes } from 'node:crypto';
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { sign, verify } from 'hono/jwt';
+import { streamSSE } from 'hono/streaming';
+import { emitAdminEvent, onAdminEvent } from '../events/adminEvents.js';
 import type { MiddlewareHandler } from 'hono';
 import { AdminStore } from './AdminStore.js';
 import type { Application } from '../application/Application.js';
+import { describeSources } from '../imagegenerator/GeneratorRegistry.js';
+import { getSessionTtlHours, saveGlobalSettings } from '../settings/settings.js';
+import {
+  bleDeviceSchema,
+  checkSources,
+  globalSettingsSchema,
+  loginSchema,
+  sessionOptionsSchema,
+  sessionOverrides,
+  statsQuerySchema,
+  valid,
+} from './validation.js';
 
 const BLUETOOTH_MAX_SCAN_TIMEOUT = 30; // seconds
 
@@ -48,21 +62,8 @@ const requireAuth: MiddlewareHandler = async (c, next) => {
 export function createAdminRouter(application: Application) {
   const admin = new Hono();
 
-  admin.post('/login', async (c) => {
-    let username: string;
-    let password: string;
-    try {
-      ({ username, password } = await c.req.json<{ username: string; password: string }>());
-    } catch {
-      return c.json({ error: 'Invalid request body' }, 400);
-    }
-    if (typeof username !== 'string' || typeof password !== 'string') {
-      return c.json({ error: 'Invalid request body' }, 400);
-    }
-    if (username.length > 128 || password.length > 1024) {
-      return c.json({ error: 'Invalid request body' }, 400);
-    }
-
+  admin.post('/login', valid('json', loginSchema), async (c) => {
+    const { username, password } = c.req.valid('json');
     const user = adminStore.getUserByUsername(username);
     // Always run comparison to prevent timing-based username enumeration
     const valid = AdminStore.verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
@@ -86,20 +87,59 @@ export function createAdminRouter(application: Application) {
     return c.json({ ok: true });
   });
 
-  admin.get('/sessions', requireAuth, (c) => {
-    return c.json(application.getSessions());
+  // Pushes AdminEvents so the admin interface updates live
+  admin.get('/events', requireAuth, (c) =>
+    streamSSE(c, async (stream) => {
+      const unsubscribe = onAdminEvent((event) => {
+        stream.writeSSE({ data: JSON.stringify(event) }).catch(() => unsubscribe());
+      });
+      // Keeps proxies from closing an idle connection
+      const heartbeat = setInterval(() => {
+        stream.writeSSE({ event: 'ping', data: '' }).catch(() => undefined);
+      }, 25_000);
+      await new Promise<void>((resolve) => stream.onAbort(resolve));
+      clearInterval(heartbeat);
+      unsubscribe();
+    })
+  );
+
+  admin.get('/sessions', requireAuth, async (c) => {
+    return c.json(await application.getSessions());
   });
 
-  admin.get('/session/:id', requireAuth, (c) => {
+  admin.get('/session/:id', requireAuth, async (c) => {
     const id = c.req.param('id');
-    const session = application.getSession(id);
+    const session = await application.getSession(id);
     if (!session) return c.json({ error: 'Session not found' }, 404);
     return c.json(session);
   });
 
-  admin.post('/session', requireAuth, async (c) => {
-    const id = await application.createNewSession();
+  admin.post('/session', requireAuth, valid('json', sessionOptionsSchema), async (c) => {
+    const { name, ttlHours, sources = {} } = c.req.valid('json');
+    const error = await checkSources(sources, 'session');
+    if (error) return c.json({ error }, 400);
+    const id = application.createNewSession(name ?? null, {
+      ttlHours: ttlHours ?? null,
+      sources: sessionOverrides(sources),
+    });
     return c.json({ id }, 201);
+  });
+
+  admin.patch('/session/:id', requireAuth, valid('json', sessionOptionsSchema), async (c) => {
+    const id = c.req.param('id');
+    const session = await application.getSession(id);
+    if (!session) return c.json({ error: 'Session not found' }, 404);
+    const { name, ttlHours, sources } = c.req.valid('json');
+    if (sources) {
+      const error = await checkSources(sources, 'session');
+      if (error) return c.json({ error }, 400);
+    }
+    // Fields that are left out keep their current value
+    application.updateSession(id, name === undefined ? session.name : name, {
+      ttlHours: ttlHours === undefined ? session.settings.ttlHours : ttlHours,
+      sources: sources ? sessionOverrides(sources) : session.settings.sources,
+    });
+    return c.json(await application.getSession(id));
   });
 
   admin.delete('/session/:id', requireAuth, (c) => {
@@ -107,6 +147,53 @@ export function createAdminRouter(application: Application) {
     try {
       application.deleteSession(id);
       return c.json({ ok: true });
+    } catch {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+  });
+
+  admin.get('/session/:id/devices', requireAuth, (c) => {
+    const id = c.req.param('id');
+    try {
+      return c.json({ devices: application.getSessionDevices(id) });
+    } catch {
+      return c.json({ error: 'Session not found' }, 404);
+    }
+  });
+
+  admin.get('/session/:id/device/:key/thumbnail', requireAuth, (c) => {
+    const thumbnail = application.getDeviceThumbnail(c.req.param('id'), c.req.param('key'));
+    if (!thumbnail) return c.json({ error: 'Thumbnail not found' }, 404);
+    return c.body(new Uint8Array(thumbnail), 200, {
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'private, no-cache',
+    });
+  });
+
+  admin.delete('/session/:id/device/:key', requireAuth, (c) => {
+    const removed = application.removeSessionDevice(c.req.param('id'), c.req.param('key'));
+    if (!removed) return c.json({ error: 'Device not found' }, 404);
+    return c.json({ ok: true });
+  });
+
+  admin.get('/settings', requireAuth, async (c) => {
+    return c.json({ sessionTtlHours: getSessionTtlHours(), sources: await describeSources() });
+  });
+
+  admin.put('/settings', requireAuth, valid('json', globalSettingsSchema), async (c) => {
+    const { sessionTtlHours, sources } = c.req.valid('json');
+    const error = await checkSources(sources, 'global');
+    if (error) return c.json({ error }, 400);
+    saveGlobalSettings({ sessionTtlHours: sessionTtlHours ?? getSessionTtlHours(), sources });
+    emitAdminEvent({ type: 'settings' });
+    return c.json({ sessionTtlHours: getSessionTtlHours(), sources: await describeSources() });
+  });
+
+  // ?from=<unix seconds>&tz=<IANA time zone>, so days and hours match the viewer's clock
+  admin.get('/session/:id/stats', requireAuth, valid('query', statsQuerySchema), (c) => {
+    const { from, tz } = c.req.valid('query');
+    try {
+      return c.json(application.getSessionStats(c.req.param('id'), from, tz));
     } catch {
       return c.json({ error: 'Session not found' }, 404);
     }
@@ -133,20 +220,11 @@ export function createAdminRouter(application: Application) {
     }
   });
 
-  admin.post('/session/:id/ble-device', requireAuth, async (c) => {
+  admin.post('/session/:id/ble-device', requireAuth, valid('json', bleDeviceSchema), (c) => {
     const id = c.req.param('id');
-    let mac: string;
-    let name: string | undefined | null;
+    const { mac, name } = c.req.valid('json');
     try {
-      ({ mac, name } = await c.req.json<{ mac: string; name?: string | null }>());
-    } catch {
-      return c.json({ error: 'Invalid request body' }, 400);
-    }
-    if (typeof mac !== 'string' || !/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(mac)) {
-      return c.json({ error: 'Invalid MAC address' }, 400);
-    }
-    try {
-      application.addSessionBleDevice(id, mac.toUpperCase(), name ?? null);
+      application.addSessionBleDevice(id, mac, name);
       return c.json({ ok: true }, 201);
     } catch {
       return c.json({ error: 'Session not found' }, 404);

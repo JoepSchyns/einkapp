@@ -1,13 +1,52 @@
 import { Store } from '../Store.js';
+import { DEFAULT_SESSION_SETTINGS, parseSessionSettings, type SessionSettings } from '../types/index.js';
+
+export interface SessionRecord {
+  id: string;
+  name: string | null;
+  createdAt: string | null;
+  lastAccessedAt: string;
+  generatorName: string | null;
+  settings: SessionSettings;
+}
+
+interface SessionRow {
+  id: string;
+  name: string | null;
+  created_unix: number | null;
+  last_accessed_unix: number;
+  last_accessed_generator_name: string | null;
+  settings: string | null;
+}
+
+const SESSION_COLUMNS = `id, name, created_unix, last_accessed_unix, last_accessed_generator_name, settings`;
+
+function toRecord(row: SessionRow): SessionRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_unix ? new Date(row.created_unix * 1000).toISOString() : null,
+    lastAccessedAt: new Date(row.last_accessed_unix * 1000).toISOString(),
+    generatorName: row.last_accessed_generator_name,
+    settings: parseSessionSettings(row.settings),
+  };
+}
 
 export class ApplicationStore extends Store {
-  getSessionIds(): string[] {
-    const rows = Store.db.prepare(`SELECT id FROM sessions`).all() as { id: string }[];
-    return rows.map((row) => row.id);
+  sessionExists(sessionId: string): boolean {
+    return Boolean(Store.db.prepare(`SELECT 1 FROM sessions WHERE id = ?`).get(sessionId));
   }
 
-  setNewSession(sessionId: string) {
-    Store.db.prepare(`INSERT INTO sessions (id) VALUES (?)`).run(sessionId);
+  setNewSession(sessionId: string, name: string | null = null, settings: SessionSettings = DEFAULT_SESSION_SETTINGS) {
+    Store.db
+      .prepare(`INSERT INTO sessions (id, name, settings, created_unix) VALUES (?, ?, ?, unixepoch())`)
+      .run(sessionId, name, JSON.stringify(settings));
+  }
+
+  updateSession(sessionId: string, name: string | null, settings: SessionSettings) {
+    Store.db
+      .prepare(`UPDATE sessions SET name = ?, settings = ? WHERE id = ?`)
+      .run(name, JSON.stringify(settings), sessionId);
   }
 
   updateSessionAccessTime(sessionId: string) {
@@ -16,49 +55,24 @@ export class ApplicationStore extends Store {
       .run(sessionId);
   }
 
-  getSessionLastAccessTime(sessionId: string): number {
-    const row = Store.db
-      .prepare(`SELECT last_accessed_unix FROM sessions WHERE id = ?`)
-      .get(sessionId) as { last_accessed_unix: number } | undefined;
-    if (!row) {
-      throw new Error(`Session with id ${sessionId} not found.`);
-    }
-    return row.last_accessed_unix * 1000;
-  }
-
-  setSessionLastAccessTime(sessionId: string, timestamp: number = Date.now()) {
-    Store.db
-      .prepare(`UPDATE sessions SET last_accessed_unix = ? WHERE id = ?`)
-      .run(Math.floor(timestamp / 1000), sessionId);
-  }
-
   deleteSession(sessionId: string) {
     Store.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId);
+    // Statistics are per session, so they go with it
+    Store.db.prepare(`DELETE FROM image_events WHERE session_id = ?`).run(sessionId);
   }
 
-  getSessions(): { id: string; lastAccessedAt: string; generatorName: string | null }[] {
+  getSessions(): SessionRecord[] {
     const rows = Store.db
-      .prepare(
-        `SELECT id, last_accessed_unix, last_accessed_generator_name FROM sessions ORDER BY last_accessed_unix DESC`,
-      )
-      .all() as { id: string; last_accessed_unix: number; last_accessed_generator_name: string | null }[];
-    return rows.map((row) => ({
-      id: row.id,
-      lastAccessedAt: new Date(row.last_accessed_unix * 1000).toISOString(),
-      generatorName: row.last_accessed_generator_name,
-    }));
+      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions ORDER BY last_accessed_unix DESC`)
+      .all() as unknown as SessionRow[];
+    return rows.map(toRecord);
   }
 
-  getSessionById(sessionId: string): { id: string; lastAccessedAt: string; generatorName: string | null } | null {
+  getSessionById(sessionId: string): SessionRecord | null {
     const row = Store.db
-      .prepare(`SELECT id, last_accessed_unix, last_accessed_generator_name FROM sessions WHERE id = ?`)
-      .get(sessionId) as { id: string; last_accessed_unix: number; last_accessed_generator_name: string | null } | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      lastAccessedAt: new Date(row.last_accessed_unix * 1000).toISOString(),
-      generatorName: row.last_accessed_generator_name,
-    };
+      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
+      .get(sessionId) as unknown as SessionRow | undefined;
+    return row ? toRecord(row) : null;
   }
 
   getSessionBleDevices(sessionId: string): { mac: string; name: string | null }[] {

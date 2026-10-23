@@ -1,0 +1,161 @@
+---
+import TabIntro from '../tabs/TabIntro.astro';
+---
+
+<section role="tabpanel" data-panel="info" hidden>
+  <TabIntro>
+    Small Bluetooth e-paper screens that show the title and source of the current image.
+    They are updated every time the session gets a new image.
+  </TabIntro>
+  <article>
+    <header><strong>Linked</strong></header>
+    <ul id="bleLinkedList" class="ble-list"></ul>
+  </article>
+  <article>
+    <header class="scan-header">
+      <strong>Add an info display</strong>
+      <button id="bleScanBtn" class="small-btn">Scan nearby</button>
+    </header>
+    <p id="bleScanHint" class="muted scan-hint">Switch the display on and keep it close, then scan. Scanning takes about 5 seconds.</p>
+    <p id="bleScanError" class="form-error" role="alert"></p>
+    <ul id="bleDiscoveredList" class="ble-list"></ul>
+  </article>
+</section>
+
+<template id="bleItemTemplate">
+  <li class="ble-item">
+    <span data-field="label"></span>
+    <button data-field="action" class="small-btn"></button>
+  </li>
+</template>
+
+<script>
+  import { api } from '../../lib/adminApi';
+  import { $, cloneTemplate, withBusy } from '../../lib/dom';
+  import { on, sessionPath } from './sessionPage';
+
+  interface BleDevice {
+    mac: string;
+    name: string | null;
+  }
+
+  let linkedMacs = new Set<string>();
+
+  function empty(message: string) {
+    return Object.assign(document.createElement('li'), { className: 'ble-empty', textContent: message });
+  }
+
+  /** A list row with the display's name and one action button */
+  function item(device: BleDevice, action: { label: string; secondary?: boolean; run: (row: HTMLElement) => Promise<void> }) {
+    const { frag, field } = cloneTemplate('bleItemTemplate');
+    const row = frag.firstElementChild as HTMLElement;
+    field('label').textContent = device.name ? `${device.name} (${device.mac})` : device.mac;
+    const btn = field<HTMLButtonElement>('action');
+    btn.textContent = action.label;
+    if (action.secondary) btn.classList.add('secondary', 'outline');
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await action.run(row);
+      } catch (err) {
+        $('bleScanError').textContent = (err as Error).message;
+        btn.disabled = false;
+      }
+    });
+    return row;
+  }
+
+  async function loadLinked() {
+    let devices: BleDevice[];
+    try {
+      ({ devices } = await api<{ devices: BleDevice[] }>(`${sessionPath}/ble-devices`));
+    } catch {
+      return;
+    }
+    linkedMacs = new Set(devices.map((d) => d.mac.toUpperCase()));
+    document.dispatchEvent(new CustomEvent('tab:count', { detail: { tab: 'info', count: devices.length } }));
+    $('bleLinkedList').replaceChildren(
+      ...(devices.length
+        ? devices.map((d) =>
+            item(d, {
+              label: 'Remove',
+              secondary: true,
+              run: async () => {
+                await api(`${sessionPath}/ble-device/${encodeURIComponent(d.mac)}`, { method: 'DELETE' });
+                await loadLinked();
+              },
+            })
+          )
+        : [empty('No info displays linked yet.')])
+    );
+  }
+
+  $('bleScanBtn').addEventListener('click', (e) =>
+    withBusy(e.currentTarget as HTMLButtonElement, async () => {
+      const list = $('bleDiscoveredList');
+      $('bleScanError').textContent = '';
+      list.replaceChildren();
+      try {
+        const { devices: found } = await api<{ devices: BleDevice[] }>('/ble/scan?timeout=5');
+        const unlinked = found.filter((d) => !linkedMacs.has(d.mac.toUpperCase()));
+        $('bleScanHint').classList.add('hidden');
+        if (unlinked.length === 0) {
+          list.append(empty(found.length ? 'All displays found nearby are already linked.' : 'No info displays found nearby.'));
+        }
+        for (const d of unlinked) {
+          list.append(
+            item(d, {
+              label: 'Link',
+              run: async (row) => {
+                await api(`${sessionPath}/ble-device`, { method: 'POST', body: { mac: d.mac, name: d.name } });
+                row.remove();
+                await loadLinked();
+              },
+            })
+          );
+        }
+      } catch (err) {
+        $('bleScanError').textContent = `Scan failed: ${(err as Error).message}`;
+      }
+    })
+  );
+
+  on('ble', loadLinked);
+</script>
+
+<style>
+  .ble-list {
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+  }
+
+  .ble-list :global(li) {
+    list-style: none;
+  }
+
+  .ble-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+
+  .ble-list :global(.ble-empty) {
+    color: var(--pico-muted-color);
+    padding-bottom: 0.5rem;
+  }
+
+  .scan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .scan-hint {
+    font-size: 0.875rem;
+  }
+</style>

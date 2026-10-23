@@ -1,0 +1,61 @@
+---
+import CopyButton from '../CopyButton.astro';
+---
+
+<header class="session-header">
+  <a href="/admin/" class="back">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path>
+    </svg>
+    Sessions
+  </a>
+  <h2 id="sessionTitle"></h2>
+  <div class="session-id">
+    <code id="sessionId"></code>
+    <CopyButton id="sessionIdCopyBtn" />
+  </div>
+</header>
+
+<script>
+  import { $, copyWithFeedback } from '../../lib/dom';
+  import { on, sessionId, state } from './sessionPage';
+
+  on('session', () => {
+    const { name } = state.session!;
+    const title = $('sessionTitle');
+    title.textContent = name ?? 'Unnamed session';
+    title.classList.toggle('muted', !name);
+    document.title = `${name ?? 'Session'} · Eink Admin`;
+    $('sessionId').textContent = sessionId;
+  });
+
+  $('sessionIdCopyBtn').addEventListener('click', () => copyWithFeedback($('sessionIdCopyBtn'), sessionId));
+</script>
+
+<style>
+  .session-header {
+    margin-bottom: var(--pico-spacing);
+  }
+
+  .back {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+
+  h2 {
+    margin: 0.25rem 0 0.1rem;
+  }
+
+  .session-id {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  .session-id code {
+    word-break: break-all;
+  }
+</style>

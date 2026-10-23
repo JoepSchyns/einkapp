@@ -1,0 +1,129 @@
+---
+import SessionNav from './SessionNav.astro';
+import SessionRow from './SessionRow.astro';
+---
+
+<SessionRow />
+
+<section id="adminSection">
+  <SessionNav />
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Session</th>
+          <th class="col-accessed">Last image</th>
+          <th>Expires</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="sessionTable"></tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+  import { formatRelative, type SessionDetails } from '../../lib/adminApi';
+  import { debounce, subscribeAdminEvents } from '../../lib/adminEvents';
+  import { copyWithFeedback } from '../../lib/dom';
+
+  type Session = SessionDetails;
+
+  const template = document.getElementById('sessionRowTemplate') as HTMLTemplateElement;
+  let sessions: Session[] = [];
+  let unsubscribe: (() => void) | null = null;
+  let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+  function renderSessions() {
+    const tbody = document.getElementById('sessionTable')!;
+    document.getElementById('sessionCount')!.textContent = `(${sessions.length})`;
+    tbody.replaceChildren();
+
+    if (sessions.length === 0) {
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.style.color = 'var(--pico-muted-color)';
+      td.textContent = 'No active sessions.';
+      const tr = document.createElement('tr');
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    for (const s of sessions) {
+      const row = template.content.cloneNode(true) as DocumentFragment;
+      const field = (name: string) => row.querySelector(`[data-field="${name}"]`)!;
+      field('name').textContent = s.name ?? '';
+      field('id').textContent = s.id;
+      const date = field('date') as HTMLElement;
+      date.textContent = formatRelative(s.lastAccessedAt);
+      date.title = new Date(s.lastAccessedAt).toLocaleString();
+      const expires = field('expires') as HTMLElement;
+      expires.textContent = s.expiresAt ? formatRelative(s.expiresAt) : 'Never';
+      if (s.expiresAt) expires.title = new Date(s.expiresAt).toLocaleString();
+      (field('viewLink') as HTMLAnchorElement).href = `/admin/session?id=${encodeURIComponent(s.id)}`;
+      (field('copyBtn') as HTMLButtonElement).dataset.copyId = s.id;
+      (row.querySelector('tr') as HTMLTableRowElement).dataset.href = `/admin/session?id=${encodeURIComponent(s.id)}`;
+
+      tbody.appendChild(row);
+    }
+  }
+
+  async function loadSessions() {
+    const res = await fetch('/api/admin/sessions');
+    if (!res.ok) {
+      stopLive();
+      document.dispatchEvent(new CustomEvent('admin:unauthenticated'));
+      return;
+    }
+    sessions = await res.json();
+    renderSessions();
+  }
+
+  /** Reloads when anything changes, instead of polling */
+  function startLive() {
+    stopLive();
+    const reload = debounce(loadSessions);
+    unsubscribe = subscribeAdminEvents(reload, reload);
+    // Keep relative times ("in 3 hours") current
+    clockTimer = setInterval(() => document.visibilityState === 'visible' && renderSessions(), 30_000);
+  }
+
+  function stopLive() {
+    unsubscribe?.();
+    unsubscribe = null;
+    if (clockTimer) clearInterval(clockTimer);
+    clockTimer = null;
+  }
+
+  document.getElementById('sessionTable')!.addEventListener('click', async (e) => {
+    const copyBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy-id]');
+    if (copyBtn) {
+      e.preventDefault();
+      await copyWithFeedback(copyBtn, copyBtn.dataset.copyId!);
+      return;
+    }
+    const row = (e.target as HTMLElement).closest<HTMLTableRowElement>('[data-href]');
+    if (row?.dataset.href) window.location.href = row.dataset.href;
+  });
+
+  document.addEventListener('admin:start-refresh', async () => {
+    await loadSessions();
+    startLive();
+  });
+
+  document.addEventListener('admin:stop-refresh', () => stopLive());
+</script>
+
+<style>
+  @media (max-width: 576px) {
+    .col-accessed {
+      display: none;
+    }
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+</style>

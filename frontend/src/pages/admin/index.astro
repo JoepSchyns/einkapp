@@ -1,13 +1,12 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import LoginForm from '../../components/LoginForm.astro';
-import SessionTable from '../../components/SessionTable.astro';
+import SessionTable from '../../components/sessions/SessionTable.astro';
+import AdminNav from '../../components/AdminNav.astro';
 ---
 
 <Layout title="Eink Admin">
-  <header class="page-header">
-    <h1>Eink Admin</h1>
-  </header>
+  <AdminNav current="sessions" />
   <LoginForm />
   <SessionTable />
 </Layout>
@@ -15,16 +14,19 @@ import SessionTable from '../../components/SessionTable.astro';
 <script>
   const loginSection = document.getElementById('loginSection')!;
   const adminSection = document.getElementById('adminSection')!;
+  const navLinks = document.getElementById('adminNavLinks')!;
 
   function showAdmin() {
     loginSection.style.display = 'none';
     adminSection.style.display = 'block';
+    navLinks.style.visibility = 'visible';
     document.dispatchEvent(new CustomEvent('admin:start-refresh'));
   }
 
   function showLogin() {
     adminSection.style.display = 'none';
     loginSection.style.display = 'block';
+    navLinks.style.visibility = 'hidden';
     document.dispatchEvent(new CustomEvent('admin:stop-refresh'));
     (document.getElementById('username') as HTMLInputElement).value = '';
     (document.getElementById('password') as HTMLInputElement).value = '';
@@ -37,6 +39,7 @@ import SessionTable from '../../components/SessionTable.astro';
   // Hide both sections until auth state is known
   loginSection.style.display = 'none';
   adminSection.style.display = 'none';
+  navLinks.style.visibility = 'hidden';
   fetch('/api/admin/sessions').then((res) => {
     if (res.ok) showAdmin(); else loginSection.style.display = 'block';
   });

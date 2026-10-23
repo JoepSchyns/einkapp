@@ -1,0 +1,66 @@
+---
+interface Props {
+  current?: 'sessions' | 'settings';
+}
+
+const { current } = Astro.props;
+---
+
+<nav class="admin-nav">
+  <ul>
+    <li><a href="/admin/" class="brand">Eink Admin</a></li>
+  </ul>
+  <ul id="adminNavLinks">
+    <li><a href="/admin/" aria-current={current === 'sessions' ? 'page' : undefined}>Sessions</a></li>
+    <li><a href="/admin/settings" aria-current={current === 'settings' ? 'page' : undefined}>Settings</a></li>
+    <li><button id="adminLogoutBtn" class="outline secondary">Logout</button></li>
+  </ul>
+</nav>
+
+<script>
+  document.getElementById('adminLogoutBtn')!.addEventListener('click', async () => {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    window.location.href = '/admin/';
+  });
+</script>
+
+<style>
+  .admin-nav {
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    margin-bottom: calc(var(--pico-spacing) * 1.5);
+  }
+
+  .brand {
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--pico-color);
+    text-decoration: none;
+  }
+
+  #adminNavLinks a[aria-current='page'] {
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 0.3em;
+  }
+
+  #adminLogoutBtn {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 480px) {
+    .brand {
+      font-size: 1rem;
+    }
+
+    .admin-nav ul li {
+      padding-left: 0.35rem;
+      padding-right: 0.35rem;
+    }
+
+    #adminNavLinks a,
+    #adminLogoutBtn {
+      font-size: 0.85rem;
+    }
+  }
+</style>
