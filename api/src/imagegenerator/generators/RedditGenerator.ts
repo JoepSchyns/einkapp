@@ -66,7 +66,10 @@ export default class RedditGenerator extends ImageGenerator<RedditData> {
     if (['hot', 'new', 'rising'].includes(listing) && !period) {
       return { listing, query: '' };
     }
-    if (listing === 'top' && ['hour', 'day', 'week', 'month', 'year', 'all', undefined].includes(period)) {
+    if (
+      listing === 'top' &&
+      ['hour', 'day', 'week', 'month', 'year', 'all', undefined].includes(period)
+    ) {
       return { listing, query: `&t=${period ?? 'day'}` };
     }
     throw new Error(`Unknown Reddit sort "${value}"`);
@@ -87,13 +90,16 @@ export default class RedditGenerator extends ImageGenerator<RedditData> {
       body: 'grant_type=client_credentials',
     });
 
-    const { access_token } = await tokenResponse.json() as { access_token: string };
+    const { access_token } = (await tokenResponse.json()) as { access_token: string };
 
     const subreddits = this.subreddit.split('+').map(encodeURIComponent).join('+');
     const { listing, query } = this.sort;
-    return fetch(`https://oauth.reddit.com/r/${subreddits}/${listing}.json?after=${after ?? ''}${query}`, {
-      headers: { Authorization: `Bearer ${access_token}` },
-    });
+    return fetch(
+      `https://oauth.reddit.com/r/${subreddits}/${listing}.json?after=${after ?? ''}${query}`,
+      {
+        headers: { Authorization: `Bearer ${access_token}` },
+      }
+    );
   }
   private isPostGoodImage(post: RedditPost): boolean {
     if (!post.data.preview || !post.data.preview.images || post.data.preview.images.length === 0) {
@@ -120,16 +126,16 @@ export default class RedditGenerator extends ImageGenerator<RedditData> {
           after: string;
           children: RedditPost[];
         };
-      }; 
+      };
       newAfter = parsedData.data.after;
       children = parsedData.data.children;
     } catch (error) {
-      console.error("Failed to parse JSON response. Raw content received:");
+      console.error('Failed to parse JSON response:', error, 'Raw content received:');
       console.error(rawBody);
     }
-    
+
     if (!children || children.length === 0) {
-     throw new Error(`No posts found in subreddit ${this.subreddit}`);
+      throw new Error(`No posts found in subreddit ${this.subreddit}`);
     }
     const imagePosts = children.filter(this.isPostGoodImage);
     if (imagePosts.length === 0) {

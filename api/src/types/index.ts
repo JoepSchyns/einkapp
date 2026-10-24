@@ -37,7 +37,10 @@ export const DEFAULT_SESSION_SETTINGS: SessionSettings = { sources: {}, ttlHours
 /** Parses the session settings JSON stored in the sessions table */
 export function parseSessionSettings(json: string | null): SessionSettings {
   const raw: unknown = json ? JSON.parse(json) : null;
-  const value = (raw && typeof raw === 'object' ? raw : {}) as { sources?: unknown; ttlHours?: unknown };
+  const value = (raw && typeof raw === 'object' ? raw : {}) as {
+    sources?: unknown;
+    ttlHours?: unknown;
+  };
   const sources =
     value.sources && typeof value.sources === 'object' && !Array.isArray(value.sources)
       ? (value.sources as Record<string, SessionSourceSettings>)
@@ -46,13 +49,23 @@ export function parseSessionSettings(json: string | null): SessionSettings {
 }
 
 /** A session's settings for one source; sources without an entry are enabled with global settings */
-export function getSessionSourceSettings(settings: SessionSettings, name: string): SessionSourceSettings {
+export function getSessionSourceSettings(
+  settings: SessionSettings,
+  name: string
+): SessionSourceSettings {
   const entry = settings.sources[name];
-  return { enabled: entry?.enabled ?? true, weight: entry?.weight ?? null, params: { ...entry?.params } };
+  return {
+    enabled: entry?.enabled ?? true,
+    weight: entry?.weight ?? null,
+    params: { ...entry?.params },
+  };
 }
 
 /** Whether two sets of generator parameters differ, ignoring key order and empty values */
-export function paramsDiffer(a: Record<string, string> = {}, b: Record<string, string> = {}): boolean {
+export function paramsDiffer(
+  a: Record<string, string> = {},
+  b: Record<string, string> = {}
+): boolean {
   const normalize = (params: Record<string, string>) =>
     JSON.stringify(
       Object.entries(params)
@@ -64,3 +77,18 @@ export function paramsDiffer(a: Record<string, string> = {}, b: Record<string, s
 
 /** Thrown when a request can't be served because of configuration, mapped to HTTP 503 */
 export class ServiceUnavailableError extends Error {}
+
+/** Thrown when a requested resource doesn't exist, mapped to HTTP 404 */
+export class NotFoundError extends Error {}
+
+/** How an info display is reached: our own BLE service or Home Assistant's OpenDisplay integration */
+export type InfoDisplayVia = 'bluetooth' | 'homeassistant';
+
+/** A small e-ink display linked to a session that shows the session's info page */
+export interface InfoDisplay {
+  mac: string;
+  name: string | null;
+  via: InfoDisplayVia;
+  /** Home Assistant webhook (its einkapp id) the display is updated through; null over Bluetooth */
+  webhook: string | null;
+}

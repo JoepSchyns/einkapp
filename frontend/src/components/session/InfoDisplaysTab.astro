@@ -1,11 +1,12 @@
 ---
 import TabIntro from '../tabs/TabIntro.astro';
+import HomeAssistantWebhooks from './HomeAssistantWebhooks.astro';
 ---
 
 <section role="tabpanel" data-panel="info" hidden>
   <TabIntro>
     Small Bluetooth e-paper screens that show the title and source of the current image.
-    They are updated every time the session gets a new image.
+    They are updated every time the session gets a new image, either directly over Bluetooth or through Home Assistant.
   </TabIntro>
   <article>
     <header><strong>Linked</strong></header>
@@ -16,9 +17,27 @@ import TabIntro from '../tabs/TabIntro.astro';
       <strong>Add an info display</strong>
       <button id="bleScanBtn" class="small-btn">Scan nearby</button>
     </header>
-    <p id="bleScanHint" class="muted scan-hint">Switch the display on and keep it close, then scan. Scanning takes about 5 seconds.</p>
+    <p id="bleScanHint" class="muted scan-hint">
+      Switch the display on and keep it close, then scan. Scanning takes about 5 seconds.
+    </p>
     <p id="bleScanError" class="form-error" role="alert"></p>
     <ul id="bleDiscoveredList" class="ble-list"></ul>
+  </article>
+  <HomeAssistantWebhooks />
+  <article>
+    <header><strong>Add through Home Assistant</strong></header>
+    <p class="muted scan-hint">
+      For a display out of reach of this server that Home Assistant's OpenDisplay integration already knows.
+      Its Bluetooth address is listed under the device's connections in Home Assistant.
+    </p>
+    <p id="haNoWebhooks" class="muted scan-hint hidden">Add a Home Assistant webhook above first.</p>
+    <form id="haLinkForm" class="ha-form hidden">
+      <select name="webhook" required aria-label="Home Assistant webhook"></select>
+      <input name="mac" type="text" required placeholder="AA:BB:CC:DD:EE:FF" pattern="([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}" aria-label="Bluetooth address" />
+      <input name="name" type="text" maxlength="100" placeholder="Name (optional)" aria-label="Name" />
+      <button type="submit" class="small-btn">Link</button>
+    </form>
+    <p id="haLinkError" class="form-error" role="alert"></p>
   </article>
 </section>
 
@@ -30,16 +49,21 @@ import TabIntro from '../tabs/TabIntro.astro';
 </template>
 
 <script>
-  import { api } from '../../lib/adminApi';
+  import { api, type HomeAssistantWebhook } from '../../lib/adminApi';
   import { $, cloneTemplate, withBusy } from '../../lib/dom';
   import { on, sessionPath } from './sessionPage';
+
+  type Via = 'bluetooth' | 'homeassistant';
 
   interface BleDevice {
     mac: string;
     name: string | null;
+    via?: Via;
+    webhook?: string | null;
   }
 
   let linkedMacs = new Set<string>();
+  let webhooks: HomeAssistantWebhook[] = [];
 
   function empty(message: string) {
     return Object.assign(document.createElement('li'), { className: 'ble-empty', textContent: message });
@@ -49,7 +73,10 @@ import TabIntro from '../tabs/TabIntro.astro';
   function item(device: BleDevice, action: { label: string; secondary?: boolean; run: (row: HTMLElement) => Promise<void> }) {
     const { frag, field } = cloneTemplate('bleItemTemplate');
     const row = frag.firstElementChild as HTMLElement;
-    field('label').textContent = device.name ? `${device.name} (${device.mac})` : device.mac;
+    const label = device.name ? `${device.name} (${device.mac})` : device.mac;
+    const webhook = webhooks.find((w) => w.id === device.webhook);
+    field('label').textContent =
+      device.via === 'homeassistant' ? `${label} · via Home Assistant${webhook ? ` (${webhook.name})` : ''}` : label;
     const btn = field<HTMLButtonElement>('action');
     btn.textContent = action.label;
     if (action.secondary) btn.classList.add('secondary', 'outline');
@@ -65,10 +92,24 @@ import TabIntro from '../tabs/TabIntro.astro';
     return row;
   }
 
+  /** Fills the webhook choice; without webhooks, points to the webhook list above instead */
+  async function loadWebhooks() {
+    try {
+      ({ webhooks } = await api<{ webhooks: HomeAssistantWebhook[] }>(`${sessionPath}/homeassistant-webhooks`));
+    } catch {
+      return;
+    }
+    const select = $<HTMLFormElement>('haLinkForm').elements.namedItem('webhook') as HTMLSelectElement;
+    const selected = select.value;
+    select.replaceChildren(...webhooks.map((w) => new Option(w.name, w.id, false, w.id === selected)));
+    $('haLinkForm').classList.toggle('hidden', webhooks.length === 0);
+    $('haNoWebhooks').classList.toggle('hidden', webhooks.length > 0);
+  }
+
   async function loadLinked() {
     let devices: BleDevice[];
     try {
-      ({ devices } = await api<{ devices: BleDevice[] }>(`${sessionPath}/ble-devices`));
+      [{ devices }] = await Promise.all([api<{ devices: BleDevice[] }>(`${sessionPath}/ble-devices`), loadWebhooks()]);
     } catch {
       return;
     }
@@ -107,7 +148,7 @@ import TabIntro from '../tabs/TabIntro.astro';
             item(d, {
               label: 'Link',
               run: async (row) => {
-                await api(`${sessionPath}/ble-device`, { method: 'POST', body: { mac: d.mac, name: d.name } });
+                await api(`${sessionPath}/ble-device`, { method: 'POST', body: { mac: d.mac, name: d.name, via: 'bluetooth' } });
                 row.remove();
                 await loadLinked();
               },
@@ -119,6 +160,26 @@ import TabIntro from '../tabs/TabIntro.astro';
       }
     })
   );
+
+  $('haLinkForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const data = new FormData(form);
+    const mac = String(data.get('mac')).trim().toUpperCase();
+    const name = String(data.get('name')).trim() || null;
+    const webhook = String(data.get('webhook'));
+    $('haLinkError').textContent = '';
+    await withBusy(form.querySelector('button')!, async () => {
+      try {
+        await api(`${sessionPath}/ble-device`, { method: 'POST', body: { mac, name, via: 'homeassistant', webhook } });
+        (form.elements.namedItem('mac') as HTMLInputElement).value = '';
+        (form.elements.namedItem('name') as HTMLInputElement).value = '';
+        await loadLinked();
+      } catch (err) {
+        $('haLinkError').textContent = (err as Error).message;
+      }
+    });
+  });
 
   on('ble', loadLinked);
 </script>
@@ -157,5 +218,18 @@ import TabIntro from '../tabs/TabIntro.astro';
 
   .scan-hint {
     font-size: 0.875rem;
+  }
+
+  .ha-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  .ha-form input {
+    flex: 1 1 12rem;
+    margin-bottom: 0;
   }
 </style>

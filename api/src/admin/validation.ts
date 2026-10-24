@@ -51,17 +51,40 @@ export const sessionOptionsSchema = z.object({
   sources: z
     .record(
       z.string(),
-      z.object({ enabled: z.boolean().default(true), weight: weight.nullable().default(null), params })
+      z.object({
+        enabled: z.boolean().default(true),
+        weight: weight.nullable().default(null),
+        params,
+      })
     )
     .optional(),
 });
 
-export const bleDeviceSchema = z.object({
-  mac: z
+export const bleDeviceSchema = z
+  .object({
+    mac: z
+      .string()
+      .regex(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/, 'Invalid MAC address')
+      .transform((mac) => mac.toUpperCase()),
+    name: z.string().max(100).nullable().default(null),
+    via: z.enum(['bluetooth', 'homeassistant']).default('bluetooth'),
+    // Required when the display is reached through Home Assistant
+    webhook: z.string().uuid().nullable().default(null),
+  })
+  .refine((d) => (d.via === 'homeassistant') === (d.webhook !== null), {
+    message:
+      'A Home Assistant webhook is required for, and only for, displays reached through Home Assistant',
+    path: ['webhook'],
+  });
+
+export const homeAssistantWebhookSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  homeAssistantUrl: z
     .string()
-    .regex(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/, 'Invalid MAC address')
-    .transform((mac) => mac.toUpperCase()),
-  name: z.string().max(100).nullable().default(null),
+    .trim()
+    .url()
+    .refine((url) => /^https?:\/\//.test(url), 'must be an http(s) URL')
+    .transform((url) => url.replace(/\/+$/, '')),
 });
 
 export const statsQuerySchema = z.object({
@@ -99,7 +122,10 @@ type SourceInput = { enabled: boolean; weight: number | null; params: Record<str
  * - global:  `enabled` makes a source available to sessions, which needs its environment variables
  * - session: values left empty fall back to the global settings
  */
-export async function checkSources(sources: Record<string, SourceInput>, scope: 'global' | 'session') {
+export async function checkSources(
+  sources: Record<string, SourceInput>,
+  scope: 'global' | 'session'
+) {
   const generators = await getGeneratorClasses();
   for (const [name, source] of Object.entries(sources)) {
     const generator = generators.find((g) => g.name === name);

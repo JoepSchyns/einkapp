@@ -7,7 +7,7 @@ import { Application } from './application/Application.js';
 import { streamSSE } from 'hono/streaming';
 import type { FitEnum } from 'sharp';
 import { MAX_RESIZE_DIMENSION, VALID_FITS } from './image/imageProcessing.js';
-import { ServiceUnavailableError } from './types/index.js';
+import { NotFoundError, ServiceUnavailableError } from './types/index.js';
 import { createAdminRouter } from './admin/admin.js';
 
 const application = new Application();
@@ -18,6 +18,9 @@ app.onError((error, c) => {
   // Errors Hono raises on purpose, e.g. 400 for malformed JSON
   if (error instanceof HTTPException) {
     return c.json({ error: error.message }, error.status);
+  }
+  if (error instanceof NotFoundError) {
+    return c.json({ error: error.message }, 404);
   }
   console.error(error);
   if (error instanceof ServiceUnavailableError) {
@@ -59,7 +62,10 @@ api.get('/session/:id/image/resize', async (c) => {
     return c.text(`Query parameter fit must be one of: ${VALID_FITS.join(', ')}.`, 400);
   }
   if (!w || !h || w <= 0 || h <= 0 || w > MAX_RESIZE_DIMENSION || h > MAX_RESIZE_DIMENSION) {
-    return c.text(`Query parameters w and h must be integers between 1 and ${MAX_RESIZE_DIMENSION}.`, 400);
+    return c.text(
+      `Query parameters w and h must be integers between 1 and ${MAX_RESIZE_DIMENSION}.`,
+      400
+    );
   }
   if (!Number.isFinite(brightness) || brightness < 0) {
     return c.text('Query parameter brightness must be a non-negative number.', 400);
@@ -77,6 +83,15 @@ api.get('/session/:id/info', async (c) => {
   return c.json(info);
 });
 
+api.get('/session/:id/info.png', async (c) => {
+  const id = c.req.param('id');
+  const body = await application.getInfoImage(id);
+  return c.body(new Uint8Array(body), 200, {
+    'Content-Type': 'image/png',
+    'Cache-Control': 'no-store',
+  });
+});
+
 api.get('/session/:id/source', async (c) => {
   const id = c.req.param('id');
   const info = await application.getInfo(id);
@@ -90,7 +105,7 @@ api.get('/session/:id/info-sse', (c) => {
   const id = c.req.param('id');
   return streamSSE(c, async (stream) => {
     const unsubscribe = await application.subscribeToInfoUpdates(id, (info) => {
-      stream.writeSSE({data: JSON.stringify(info)});
+      stream.writeSSE({ data: JSON.stringify(info) });
     });
     stream.onAbort(unsubscribe);
     await new Promise<void>((resolve) => stream.onAbort(resolve));

@@ -1,8 +1,3 @@
-export interface BleDevice {
-  mac: string;
-  name: string | null;
-}
-
 export interface ScannedDevice {
   mac: string;
   name: string;
@@ -26,7 +21,11 @@ export class BleService {
     return data.devices;
   }
 
-  async pushImage(devices: BleDevice[], imageBytes: Buffer, contentType: string): Promise<void> {
+  async pushImage(
+    devices: { mac: string }[],
+    imageBytes: Buffer,
+    contentType: string
+  ): Promise<void> {
     await Promise.all(
       devices.map(async (device) => {
         const mac = encodeURIComponent(device.mac);
@@ -38,7 +37,7 @@ export class BleService {
         if (!res.ok) {
           throw new Error(`BLE push to ${device.mac} failed: ${res.status} ${res.statusText}`);
         }
-      }),
+      })
     );
   }
 }

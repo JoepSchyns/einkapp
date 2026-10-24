@@ -1,0 +1,299 @@
+---
+import CopyButton from '../CopyButton.astro';
+---
+
+<article id="homeassistant">
+  <header><strong>Home Assistant webhooks</strong></header>
+  <p class="muted hint">
+    Info displays out of Bluetooth range of this server can be updated through Home Assistant's OpenDisplay
+    integration. This server only calls a webhook in Home Assistant, so it needs no Home Assistant account or
+    token: someone who learns the webhook can only make it show this session's info image. Add a webhook for
+    each Home Assistant this session uses, then follow its setup steps.
+  </p>
+  <ul id="haWebhookList" class="webhook-list"></ul>
+  <form id="haWebhookAddForm" class="webhook-form">
+    <input name="name" type="text" required maxlength="100" placeholder="Name, e.g. Home" aria-label="Name" />
+    <input
+      name="homeAssistantUrl"
+      type="url"
+      required
+      placeholder="http://homeassistant.local:8123"
+      aria-label="Home Assistant URL"
+    />
+    <button type="submit" class="small-btn">Add webhook</button>
+  </form>
+  <small class="muted">The Home Assistant URL is the address this server reaches Home Assistant on.</small>
+  <p id="haWebhookError" class="form-error" role="alert"></p>
+</article>
+
+<template id="haWebhookTemplate">
+  <li data-field="row">
+    <details>
+      <summary>
+        <strong data-field="name"></strong> <span class="muted" data-field="url"></span>
+      </summary>
+      <ol class="setup-steps">
+        <li>Add the info display to Home Assistant's OpenDisplay integration.</li>
+        <li>
+          Enable packages in Home Assistant's <code>configuration.yaml</code>, if you haven't yet:
+          <pre><code>homeassistant:
+  packages: !include_dir_named packages</code></pre>
+        </li>
+        <li>
+          Save this as <code data-field="fileName"></code> in Home Assistant's <code>packages</code> folder, then
+          restart Home Assistant:
+          <div class="yaml">
+            <pre><code data-field="yaml"></code></pre>
+            <CopyButton dataField="copyYaml" />
+          </div>
+        </li>
+        <li>
+          Add the display under <em>Add through Home Assistant</em> below, with this webhook and the display's
+          Bluetooth address. Home Assistant lists that address under the device's connections.
+        </li>
+      </ol>
+      <p class="muted hint">
+        The webhook only accepts calls from Home Assistant's own network (<code>local_only</code>). If this server
+        runs elsewhere, set <code>local_only: false</code> and reach Home Assistant over HTTPS. Home Assistant
+        answers every webhook call alike, so when a display doesn't update, check the traces of the
+        <em data-field="automation"></em> automation in Home Assistant.
+      </p>
+      <form data-field="editForm" class="webhook-form">
+        <input name="name" type="text" required maxlength="100" aria-label="Name" />
+        <input name="homeAssistantUrl" type="url" required aria-label="Home Assistant URL" />
+        <button type="submit" class="small-btn">Save</button>
+        <button type="button" data-field="delete" class="small-btn secondary outline">Delete</button>
+      </form>
+    </details>
+  </li>
+</template>
+
+<script>
+  import { api, type HomeAssistantWebhook } from '../../lib/adminApi';
+  import { $, cloneTemplate, copyWithFeedback, withBusy } from '../../lib/dom';
+  import { on, sessionPath } from './sessionPage';
+
+  const webhooksPath = `${sessionPath}/homeassistant-webhooks`;
+
+  /**
+   * Home Assistant package for one webhook. Names get the webhook's id as suffix, so packages for
+   * several webhooks can live in the same Home Assistant.
+   */
+  function packageYaml(webhook: HomeAssistantWebhook, suffix: string) {
+    // A JSON string is a valid double-quoted YAML string, whatever characters the name has
+    const quote = (value: string) => JSON.stringify(value);
+    return `# einkapp: updates info displays through the OpenDisplay integration when einkapp calls the webhook
+# with { "mac": ..., "session": ... }. The automation builds the image URL itself.
+
+script:
+  einkapp_upload_image_${suffix}:
+    alias: ${quote(`einkapp ${webhook.name} - upload info image`)}
+    description: "Uploads one image to an OpenDisplay device and returns { ok: true } when it worked"
+    mode: parallel
+    max: 20
+    fields:
+      device_id:
+        description: Home Assistant device id of the OpenDisplay display
+      image_url:
+        description: URL Home Assistant downloads the image from
+    sequence:
+      - action: opendisplay.upload_image
+        data:
+          device_id: "{{ device_id }}"
+          image:
+            media_content_id: "{{ image_url }}"
+            media_content_type: image/png
+      # Only reached when the upload didn't fail
+      - variables:
+          result:
+            ok: true
+      - stop: Uploaded
+        response_variable: result
+
+automation:
+  - id: einkapp_info_display_${suffix}
+    alias: ${quote(`einkapp ${webhook.name} - update info display`)}
+    description: "Shows einkapp's info image on an OpenDisplay display, retrying for 15 minutes until it wakes"
+    # Every run pushes the session's latest image, so a run that is still retrying covers newer
+    # images too; runs beyond the limit are dropped
+    mode: parallel
+    max: 10
+    max_exceeded: silent
+    triggers:
+      - trigger: webhook
+        webhook_id: ${webhook.webhookId}
+        allowed_methods: [POST]
+        local_only: true
+    variables:
+      # Where Home Assistant downloads the info images from
+      einkapp_url: ${quote(window.location.origin)}
+      mac: "{{ trigger.json.mac | default('') | string | upper }}"
+      session: "{{ trigger.json.session | default('') | string }}"
+    conditions:
+      # Only accept a session id and a MAC address, so the webhook can't point Home Assistant elsewhere
+      - "{{ session is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') }}"
+      - "{{ mac is match('^([0-9A-F]{2}:){5}[0-9A-F]{2}$') }}"
+    actions:
+      - variables:
+          device_id: >-
+            {%- set ns = namespace(id='') -%}
+            {%- for d in integration_entities('opendisplay') | map('device_id') | reject('none') | unique -%}
+              {%- for c in device_attr(d, 'connections') if c[0] == 'bluetooth' and c[1] | upper == mac -%}
+                {%- set ns.id = d -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {{ ns.id }}
+      - if: "{{ device_id == '' }}"
+        then:
+          - stop: "{{ mac }} is not an OpenDisplay device"
+            error: true
+      - repeat:
+          sequence:
+            - action: script.einkapp_upload_image_${suffix}
+              continue_on_error: true
+              response_variable: result
+              data:
+                device_id: "{{ device_id }}"
+                # The query string keeps Home Assistant from reusing an old image
+                image_url: "{{ einkapp_url }}/api/session/{{ session }}/info.png?t={{ now().timestamp() | int }}"
+            - if: "{{ not (result is defined and result.ok | default(false)) }}"
+              then:
+                - delay: 20
+          until: "{{ (result is defined and result.ok | default(false)) or repeat.index >= 45 }}"
+`;
+  }
+
+  function formBody(form: HTMLFormElement) {
+    const data = new FormData(form);
+    return { name: String(data.get('name')).trim(), homeAssistantUrl: String(data.get('homeAssistantUrl')).trim() };
+  }
+
+  /** Runs a change from a form button, showing a failure under the list */
+  function submit(btn: HTMLButtonElement, change: () => Promise<unknown>) {
+    $('haWebhookError').textContent = '';
+    return withBusy(btn, async () => {
+      try {
+        await change();
+        await load();
+      } catch (err) {
+        $('haWebhookError').textContent = (err as Error).message;
+      }
+    });
+  }
+
+  function row(webhook: HomeAssistantWebhook, open: boolean) {
+    const { frag, field } = cloneTemplate('haWebhookTemplate');
+    const suffix = webhook.id.slice(0, 8);
+    const yaml = packageYaml(webhook, suffix);
+    field('row').dataset.webhook = webhook.id;
+    frag.querySelector('details')!.open = open;
+    field('name').textContent = webhook.name;
+    field('url').textContent = webhook.homeAssistantUrl;
+    field('fileName').textContent = `packages/einkapp_${suffix}.yaml`;
+    field('yaml').textContent = yaml;
+    field('automation').textContent = `einkapp ${webhook.name} - update info display`;
+    const copyBtn = field('copyYaml');
+    copyBtn.addEventListener('click', () => copyWithFeedback(copyBtn, yaml));
+
+    const form = field<HTMLFormElement>('editForm');
+    (form.elements.namedItem('name') as HTMLInputElement).value = webhook.name;
+    (form.elements.namedItem('homeAssistantUrl') as HTMLInputElement).value = webhook.homeAssistantUrl;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submit(form.querySelector('button[type="submit"]')!, () =>
+        api(`${webhooksPath}/${webhook.id}`, { method: 'PUT', body: formBody(form) })
+      );
+    });
+    const deleteBtn = field<HTMLButtonElement>('delete');
+    deleteBtn.addEventListener('click', () => {
+      if (!confirm(`Delete webhook ${webhook.name}? Info displays linked through it are unlinked.`)) return;
+      submit(deleteBtn, () => api(`${webhooksPath}/${webhook.id}`, { method: 'DELETE' }));
+    });
+    return frag;
+  }
+
+  /** Webhooks whose setup steps stay open when the list is rendered again, e.g. the one just added */
+  const openIds = new Set<string>();
+
+  async function load() {
+    let webhooks: HomeAssistantWebhook[];
+    try {
+      ({ webhooks } = await api<{ webhooks: HomeAssistantWebhook[] }>(webhooksPath));
+    } catch {
+      return; // Deleted in the meantime; the session page says so
+    }
+    for (const li of $('haWebhookList').querySelectorAll<HTMLElement>('[data-webhook]')) {
+      if (li.querySelector('details')!.open) openIds.add(li.dataset.webhook!);
+      else openIds.delete(li.dataset.webhook!);
+    }
+    $('haWebhookList').replaceChildren(...webhooks.map((w) => row(w, openIds.has(w.id))));
+  }
+
+  const addForm = $<HTMLFormElement>('haWebhookAddForm');
+  addForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit(addForm.querySelector('button')!, async () => {
+      const webhook = await api<HomeAssistantWebhook>(webhooksPath, { method: 'POST', body: formBody(addForm) });
+      openIds.add(webhook.id);
+      addForm.reset();
+    });
+  });
+
+  // Webhook changes reach the page as session changes, which fire 'ble'
+  on('ble', load);
+</script>
+
+<style>
+  .hint {
+    font-size: 0.875rem;
+  }
+
+  .webhook-list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+  }
+
+  .webhook-list :global(li) {
+    list-style: none;
+  }
+
+  .webhook-list :global(details) {
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    padding: 0.5rem 0;
+    margin: 0;
+  }
+
+  .webhook-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .webhook-form input {
+    flex: 1 1 12rem;
+    margin-bottom: 0;
+  }
+
+  .setup-steps :global(pre) {
+    font-size: 0.8rem;
+    margin: 0.5rem 0;
+  }
+
+  .yaml {
+    position: relative;
+  }
+
+  .yaml :global(.copy-btn) {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .yaml pre {
+    max-height: 20rem;
+    overflow: auto;
+  }
+</style>

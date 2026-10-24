@@ -65,6 +65,14 @@ export interface SessionDevice {
   hasThumbnail: boolean;
 }
 
+/** A webhook in Home Assistant that updates the info displays linked through it */
+export interface HomeAssistantWebhook {
+  id: string;
+  name: string;
+  homeAssistantUrl: string;
+  webhookId: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,

@@ -1,5 +1,11 @@
 import { Store } from '../Store.js';
-import { DEFAULT_SESSION_SETTINGS, parseSessionSettings, type SessionSettings } from '../types/index.js';
+import {
+  DEFAULT_SESSION_SETTINGS,
+  parseSessionSettings,
+  type InfoDisplay,
+  type InfoDisplayVia,
+  type SessionSettings,
+} from '../types/index.js';
 
 export interface SessionRecord {
   id: string;
@@ -37,9 +43,15 @@ export class ApplicationStore extends Store {
     return Boolean(Store.db.prepare(`SELECT 1 FROM sessions WHERE id = ?`).get(sessionId));
   }
 
-  setNewSession(sessionId: string, name: string | null = null, settings: SessionSettings = DEFAULT_SESSION_SETTINGS) {
+  setNewSession(
+    sessionId: string,
+    name: string | null = null,
+    settings: SessionSettings = DEFAULT_SESSION_SETTINGS
+  ) {
     Store.db
-      .prepare(`INSERT INTO sessions (id, name, settings, created_unix) VALUES (?, ?, ?, unixepoch())`)
+      .prepare(
+        `INSERT INTO sessions (id, name, settings, created_unix) VALUES (?, ?, ?, unixepoch())`
+      )
       .run(sessionId, name, JSON.stringify(settings));
   }
 
@@ -75,24 +87,37 @@ export class ApplicationStore extends Store {
     return row ? toRecord(row) : null;
   }
 
-  getSessionBleDevices(sessionId: string): { mac: string; name: string | null }[] {
+  getSessionInfoDisplays(sessionId: string): InfoDisplay[] {
     const rows = Store.db
-      .prepare(`SELECT mac_address, device_name FROM session_ble_devices WHERE session_id = ?`)
-      .all(sessionId) as { mac_address: string; device_name: string | null }[];
-    return rows.map((r) => ({ mac: r.mac_address, name: r.device_name }));
+      .prepare(
+        `SELECT mac_address, device_name, via, webhook FROM session_ble_devices WHERE session_id = ?`
+      )
+      .all(sessionId) as {
+      mac_address: string;
+      device_name: string | null;
+      via: InfoDisplayVia;
+      webhook: string | null;
+    }[];
+    return rows.map((r) => ({
+      mac: r.mac_address,
+      name: r.device_name,
+      via: r.via,
+      webhook: r.webhook,
+    }));
   }
 
-  addSessionBleDevice(sessionId: string, mac: string, name: string | null): void {
+  addSessionInfoDisplay(sessionId: string, device: InfoDisplay): void {
     Store.db
       .prepare(
-        `INSERT INTO session_ble_devices (session_id, mac_address, device_name)
-         VALUES (?, ?, ?)
-         ON CONFLICT (session_id, mac_address) DO UPDATE SET device_name = excluded.device_name`,
+        `INSERT INTO session_ble_devices (session_id, mac_address, device_name, via, webhook)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, mac_address) DO UPDATE
+         SET device_name = excluded.device_name, via = excluded.via, webhook = excluded.webhook`
       )
-      .run(sessionId, mac, name ?? null);
+      .run(sessionId, device.mac, device.name ?? null, device.via, device.webhook);
   }
 
-  removeSessionBleDevice(sessionId: string, mac: string): void {
+  removeSessionInfoDisplay(sessionId: string, mac: string): void {
     Store.db
       .prepare(`DELETE FROM session_ble_devices WHERE session_id = ? AND mac_address = ?`)
       .run(sessionId, mac);

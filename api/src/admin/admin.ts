@@ -13,6 +13,7 @@ import {
   bleDeviceSchema,
   checkSources,
   globalSettingsSchema,
+  homeAssistantWebhookSchema,
   loginSchema,
   sessionOptionsSchema,
   sessionOverrides,
@@ -26,7 +27,9 @@ const JWT_SECRET = (() => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     const ephemeral = randomBytes(32).toString('hex');
-    console.warn('[admin] JWT_SECRET not set — using ephemeral secret, admin sessions reset on restart.');
+    console.warn(
+      '[admin] JWT_SECRET not set — using ephemeral secret, admin sessions reset on restart.'
+    );
     return ephemeral;
   }
   if (Buffer.byteLength(secret) < 32) {
@@ -72,11 +75,7 @@ export function createAdminRouter(application: Application) {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const token = await sign(
-      { sub: username, iat: now, exp: now + 8 * 3600 },
-      JWT_SECRET,
-      'HS256',
-    );
+    const token = await sign({ sub: username, iat: now, exp: now + 8 * 3600 }, JWT_SECRET, 'HS256');
     const secure = process.env.NODE_ENV === 'production';
     setCookie(c, 'admin_token', token, { httpOnly: true, sameSite: 'Strict', path: '/', secure });
     return c.json({ ok: true });
@@ -142,23 +141,14 @@ export function createAdminRouter(application: Application) {
     return c.json(await application.getSession(id));
   });
 
+  // From here on an unknown session throws NotFoundError, which the app turns into a 404
   admin.delete('/session/:id', requireAuth, (c) => {
-    const id = c.req.param('id');
-    try {
-      application.deleteSession(id);
-      return c.json({ ok: true });
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
-    }
+    application.deleteSession(c.req.param('id'));
+    return c.json({ ok: true });
   });
 
   admin.get('/session/:id/devices', requireAuth, (c) => {
-    const id = c.req.param('id');
-    try {
-      return c.json({ devices: application.getSessionDevices(id) });
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
-    }
+    return c.json({ devices: application.getSessionDevices(c.req.param('id')) });
   });
 
   admin.get('/session/:id/device/:key/thumbnail', requireAuth, (c) => {
@@ -192,11 +182,7 @@ export function createAdminRouter(application: Application) {
   // ?from=<unix seconds>&tz=<IANA time zone>, so days and hours match the viewer's clock
   admin.get('/session/:id/stats', requireAuth, valid('query', statsQuerySchema), (c) => {
     const { from, tz } = c.req.valid('query');
-    try {
-      return c.json(application.getSessionStats(c.req.param('id'), from, tz));
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
-    }
+    return c.json(application.getSessionStats(c.req.param('id'), from, tz));
   });
 
   admin.get('/ble/scan', requireAuth, async (c) => {
@@ -211,35 +197,63 @@ export function createAdminRouter(application: Application) {
   });
 
   admin.get('/session/:id/ble-devices', requireAuth, (c) => {
-    const id = c.req.param('id');
-    try {
-      const devices = application.getSessionBleDevices(id);
-      return c.json({ devices });
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
+    return c.json({ devices: application.getSessionInfoDisplays(c.req.param('id')) });
+  });
+
+  admin.get('/session/:id/homeassistant-webhooks', requireAuth, (c) => {
+    return c.json({ webhooks: application.getHomeAssistantWebhooks(c.req.param('id')) });
+  });
+
+  admin.post(
+    '/session/:id/homeassistant-webhooks',
+    requireAuth,
+    valid('json', homeAssistantWebhookSchema),
+    (c) => {
+      const { name, homeAssistantUrl } = c.req.valid('json');
+      return c.json(
+        application.addHomeAssistantWebhook(c.req.param('id'), name, homeAssistantUrl),
+        201
+      );
     }
+  );
+
+  admin.put(
+    '/session/:id/homeassistant-webhooks/:webhook',
+    requireAuth,
+    valid('json', homeAssistantWebhookSchema),
+    (c) => {
+      const { name, homeAssistantUrl } = c.req.valid('json');
+      const webhook = application.updateHomeAssistantWebhook(
+        c.req.param('id'),
+        c.req.param('webhook'),
+        name,
+        homeAssistantUrl
+      );
+      if (!webhook) return c.json({ error: 'Webhook not found' }, 404);
+      return c.json(webhook);
+    }
+  );
+
+  admin.delete('/session/:id/homeassistant-webhooks/:webhook', requireAuth, (c) => {
+    if (!application.removeHomeAssistantWebhook(c.req.param('id'), c.req.param('webhook'))) {
+      return c.json({ error: 'Webhook not found' }, 404);
+    }
+    return c.json({ ok: true });
   });
 
   admin.post('/session/:id/ble-device', requireAuth, valid('json', bleDeviceSchema), (c) => {
     const id = c.req.param('id');
-    const { mac, name } = c.req.valid('json');
-    try {
-      application.addSessionBleDevice(id, mac, name);
-      return c.json({ ok: true }, 201);
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
+    const device = c.req.valid('json');
+    if (device.webhook && !application.getHomeAssistantWebhook(id, device.webhook)) {
+      return c.json({ error: 'Unknown Home Assistant webhook' }, 400);
     }
+    application.addSessionInfoDisplay(id, device);
+    return c.json({ ok: true }, 201);
   });
 
   admin.delete('/session/:id/ble-device/:mac', requireAuth, (c) => {
-    const id = c.req.param('id');
-    const mac = c.req.param('mac');
-    try {
-      application.removeSessionBleDevice(id, mac.toUpperCase());
-      return c.json({ ok: true });
-    } catch {
-      return c.json({ error: 'Session not found' }, 404);
-    }
+    application.removeSessionInfoDisplay(c.req.param('id'), c.req.param('mac').toUpperCase());
+    return c.json({ ok: true });
   });
 
   return admin;

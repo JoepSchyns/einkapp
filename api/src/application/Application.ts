@@ -1,9 +1,18 @@
 import { Session } from '../session/Session.js';
-import { getSessionSourceSettings, paramsDiffer, type ContentInfo, type SessionSettings } from '../types/index.js';
+import {
+  getSessionSourceSettings,
+  NotFoundError,
+  paramsDiffer,
+  type ContentInfo,
+  type InfoDisplay,
+  type SessionSettings,
+} from '../types/index.js';
 import { ImageGeneratorStore } from '../imagegenerator/imageGeneratorStore.js';
 import { ApplicationStore, type SessionRecord } from './ApplicationStore.js';
 import { BleService } from '../ble/BleService.js';
-import type { BleDevice, ScannedDevice } from '../ble/BleService.js';
+import { HomeAssistantService } from '../homeassistant/HomeAssistantService.js';
+import type { HomeAssistantWebhook } from '../homeassistant/HomeAssistantStore.js';
+import type { ScannedDevice } from '../ble/BleService.js';
 import { ScreenshotService } from '../screenshot/ScreenshotService.js';
 import { DeviceStore, type ResizeParams, type SessionDevice } from '../devices/DeviceStore.js';
 import { StatsStore } from '../stats/StatsStore.js';
@@ -13,6 +22,8 @@ import { makeThumbnail, resizeImage } from '../image/imageProcessing.js';
 import { emitAdminEvent } from '../events/adminEvents.js';
 
 const HOUR_MS = 60 * 60 * 1000;
+/** How long a failed info screenshot is kept, so repeated requests don't each start a new one */
+const INFO_IMAGE_FAILURE_COOLDOWN_MS = 10 * 1000;
 
 export interface DisplayRequest {
   device: { key: string; label: string };
@@ -35,7 +46,11 @@ export class Application {
   private readonly sessions = new Map<string, Session>();
   private infoSubscribers = new Map<string, ((info: ContentInfo) => void)[]>();
   private readonly bleService = new BleService();
+  /** Reaches info displays linked through Home Assistant */
+  private readonly homeAssistant = new HomeAssistantService();
   private readonly screenshotService = new ScreenshotService();
+  /** Rendered info page per session, dropped whenever the info changes */
+  private readonly infoImages = new Map<string, Promise<Buffer>>();
 
   constructor() {
     this.store = new ApplicationStore();
@@ -77,7 +92,7 @@ export class Application {
     let session = this.sessions.get(sessionId);
     if (!session) {
       if (!this.store.sessionExists(sessionId)) {
-        throw new Error(`Session with id ${sessionId} not found.`);
+        throw new NotFoundError(`Session with id ${sessionId} not found.`);
       }
       session = new Session(sessionId);
       this.sessions.set(sessionId, session);
@@ -86,13 +101,19 @@ export class Application {
   }
 
   /** Generates a new image for a display and remembers what that device is now showing. */
-  async getDisplayImage(sessionId: string, request: DisplayRequest): Promise<{ body: Buffer; contentType: string }> {
+  async getDisplayImage(
+    sessionId: string,
+    request: DisplayRequest
+  ): Promise<{ body: Buffer; contentType: string }> {
     const session = this.getSessionById(sessionId);
     this.store.updateSessionAccessTime(sessionId);
     const resize = request.resize;
     let output;
     try {
-      output = await session.getContent(request.device.key, resize ? (image) => resizeImage(image.buffer, resize) : undefined);
+      output = await session.getContent(
+        request.device.key,
+        resize ? (image) => resizeImage(image.buffer, resize) : undefined
+      );
     } catch (err) {
       // Failures show up in the statistics, so the admin interface still wants to know
       emitAdminEvent({ type: 'image', sessionId });
@@ -121,24 +142,73 @@ export class Application {
     });
     emitAdminEvent({ type: 'image', sessionId });
 
-    // Notify all info-sse subscribers first so info is up-to-date before screenshotting
+    // Drop the old screenshot, then notify all info-sse subscribers so info is up-to-date before screenshotting
+    this.infoImages.delete(sessionId);
     const subscribers = this.infoSubscribers.get(sessionId) || [];
     subscribers.forEach((cb) => cb(info));
 
-    // Push a screenshot of the info page to all linked BLE displays
-    const bleDevices = this.store.getSessionBleDevices(sessionId);
-    if (bleDevices.length > 0) {
-      try {
-        const frontendUrl = (process.env.FRONTEND_INTERNAL_URL ?? 'http://frontend').replace(/\/$/, '');
-        const infoUrl = `${frontendUrl}/info?id=${encodeURIComponent(sessionId)}`;
-        const imageBytes = await this.screenshotService.screenshot(infoUrl, 250, 122, '#title:not(.hidden)');
-        await this.bleService.pushImage(bleDevices, imageBytes, 'image/png');
-      } catch (err) {
-        console.error('Failed to push screenshot to BLE devices:', err);
-      }
-    }
+    // Push a screenshot of the info page to all linked info displays. Home Assistant runs in the
+    // background, so the display requesting this image doesn't wait on it.
+    const infoDisplays = this.store.getSessionInfoDisplays(sessionId);
+    void this.pushToHomeAssistant(
+      sessionId,
+      infoDisplays.filter((d) => d.via === 'homeassistant')
+    );
+    await this.pushToBluetooth(
+      sessionId,
+      infoDisplays.filter((d) => d.via === 'bluetooth')
+    );
 
     return { body: output.buffer, contentType: output.contentType };
+  }
+
+  private async pushToBluetooth(sessionId: string, devices: InfoDisplay[]): Promise<void> {
+    if (devices.length === 0) return;
+    try {
+      const imageBytes = await this.getInfoImage(sessionId);
+      await this.bleService.pushImage(devices, imageBytes, 'image/png');
+    } catch (err) {
+      console.error('Failed to push screenshot to BLE devices:', err);
+    }
+  }
+
+  private async pushToHomeAssistant(sessionId: string, devices: InfoDisplay[]): Promise<void> {
+    if (devices.length === 0) return;
+    try {
+      // Home Assistant downloads /api/session/:id/info.png itself
+      await this.homeAssistant.pushImage(devices, sessionId);
+    } catch (err) {
+      console.error('Failed to push screenshot through Home Assistant:', err);
+    }
+  }
+
+  /** Screenshot of the session's info page, sized for the small e-ink info display */
+  getInfoImage(sessionId: string): Promise<Buffer> {
+    this.getSessionById(sessionId); // validates session exists
+    let image = this.infoImages.get(sessionId);
+    if (!image) {
+      const frontendUrl = (process.env.FRONTEND_INTERNAL_URL ?? 'http://frontend').replace(
+        /\/$/,
+        ''
+      );
+      const infoUrl = `${frontendUrl}/info?id=${encodeURIComponent(sessionId)}`;
+      const screenshot = this.screenshotService.screenshot(
+        infoUrl,
+        250,
+        122,
+        '#title:not(.hidden)'
+      );
+      // Keep failures only briefly, so a later request tries again. Only drop this screenshot,
+      // not a newer one cached after the info changed.
+      screenshot.catch(() =>
+        setTimeout(() => {
+          if (this.infoImages.get(sessionId) === screenshot) this.infoImages.delete(sessionId);
+        }, INFO_IMAGE_FAILURE_COOLDOWN_MS).unref()
+      );
+      this.infoImages.set(sessionId, screenshot);
+      image = screenshot;
+    }
+    return image;
   }
 
   getInfo(sessionId: string): Promise<ContentInfo> {
@@ -146,7 +216,7 @@ export class Application {
     return session.getInfo();
   }
 
-  async subscribeToInfoUpdates(sessionId: string, callback: (info: ContentInfo) => void){
+  async subscribeToInfoUpdates(sessionId: string, callback: (info: ContentInfo) => void) {
     const session = this.getSessionById(sessionId);
     const currentInfo = await session.getInfo();
     callback(currentInfo);
@@ -176,10 +246,13 @@ export class Application {
   updateSession(sessionId: string, name: string | null, settings: SessionSettings): void {
     const current = this.store.getSessionById(sessionId);
     if (!current) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session not found');
     }
     this.store.updateSession(sessionId, name, settings);
-    for (const generatorName of new Set([...Object.keys(current.settings.sources), ...Object.keys(settings.sources)])) {
+    for (const generatorName of new Set([
+      ...Object.keys(current.settings.sources),
+      ...Object.keys(settings.sources),
+    ])) {
       const before = getSessionSourceSettings(current.settings, generatorName).params;
       const after = getSessionSourceSettings(settings, generatorName).params;
       if (paramsDiffer(before, after)) {
@@ -191,10 +264,11 @@ export class Application {
 
   deleteSession(sessionId: string): void {
     if (!this.store.sessionExists(sessionId)) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session not found');
     }
     this.store.deleteSession(sessionId);
     this.sessions.delete(sessionId);
+    this.infoImages.delete(sessionId);
     emitAdminEvent({ type: 'session', sessionId, deleted: true });
   }
 
@@ -211,7 +285,9 @@ export class Application {
         ttlHours === 0
           ? null
           : new Date(new Date(record.lastAccessedAt).getTime() + ttlHours * HOUR_MS).toISOString(),
-      effectiveSources: usable.filter((name) => getSessionSourceSettings(record.settings, name).enabled),
+      effectiveSources: usable.filter(
+        (name) => getSessionSourceSettings(record.settings, name).enabled
+      ),
     };
   }
 
@@ -243,7 +319,7 @@ export class Application {
   getSessionStats(sessionId: string, since: number, timeZone: string) {
     const session = this.store.getSessionById(sessionId);
     if (!session) {
-      throw new Error('Session not found');
+      throw new NotFoundError('Session not found');
     }
     return this.statsStore.getSessionStats(session, since, timeZone);
   }
@@ -252,20 +328,59 @@ export class Application {
     return this.bleService.scan(timeout);
   }
 
-  getSessionBleDevices(sessionId: string): BleDevice[] {
+  getSessionInfoDisplays(sessionId: string): InfoDisplay[] {
     this.getSessionById(sessionId); // validates session exists
-    return this.store.getSessionBleDevices(sessionId);
+    return this.store.getSessionInfoDisplays(sessionId);
   }
 
-  addSessionBleDevice(sessionId: string, mac: string, name: string | null): void {
+  addSessionInfoDisplay(sessionId: string, device: InfoDisplay): void {
     this.getSessionById(sessionId); // validates session exists
-    this.store.addSessionBleDevice(sessionId, mac, name);
+    this.store.addSessionInfoDisplay(sessionId, device);
     emitAdminEvent({ type: 'session', sessionId });
   }
 
-  removeSessionBleDevice(sessionId: string, mac: string): void {
+  getHomeAssistantWebhooks(sessionId: string): HomeAssistantWebhook[] {
     this.getSessionById(sessionId); // validates session exists
-    this.store.removeSessionBleDevice(sessionId, mac);
+    return this.homeAssistant.webhooks.list(sessionId);
+  }
+
+  getHomeAssistantWebhook(sessionId: string, id: string): HomeAssistantWebhook | null {
+    return this.homeAssistant.webhooks.get(sessionId, id);
+  }
+
+  addHomeAssistantWebhook(
+    sessionId: string,
+    name: string,
+    homeAssistantUrl: string
+  ): HomeAssistantWebhook {
+    this.getSessionById(sessionId); // validates session exists
+    const webhook = this.homeAssistant.webhooks.create(sessionId, name, homeAssistantUrl);
+    emitAdminEvent({ type: 'session', sessionId });
+    return webhook;
+  }
+
+  /** Returns the updated webhook, or null when the session has no such webhook */
+  updateHomeAssistantWebhook(
+    sessionId: string,
+    id: string,
+    name: string,
+    homeAssistantUrl: string
+  ): HomeAssistantWebhook | null {
+    if (!this.homeAssistant.webhooks.update(sessionId, id, name, homeAssistantUrl)) return null;
+    emitAdminEvent({ type: 'session', sessionId });
+    return this.homeAssistant.webhooks.get(sessionId, id);
+  }
+
+  /** Also unlinks the info displays that used it; false when the session has no such webhook */
+  removeHomeAssistantWebhook(sessionId: string, id: string): boolean {
+    if (!this.homeAssistant.webhooks.delete(sessionId, id)) return false;
+    emitAdminEvent({ type: 'session', sessionId });
+    return true;
+  }
+
+  removeSessionInfoDisplay(sessionId: string, mac: string): void {
+    this.getSessionById(sessionId); // validates session exists
+    this.store.removeSessionInfoDisplay(sessionId, mac);
     emitAdminEvent({ type: 'session', sessionId });
   }
 }
